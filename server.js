@@ -44,12 +44,12 @@ const OR_API_KEY      = process.env.OPENROUTER_API_KEY;
 // Server auto-picks the first one that responds OK on startup.
 // All have :free suffix = $0 cost on OpenRouter.
 const FREE_MODEL_CANDIDATES = [
-  "qwen/qwen3-coder:free",          // #1 coding 2026
-  "openai/gpt-oss-20b:free",        // matches o3-mini on benchmarks
-  "meta-llama/llama-3.3-70b-instruct:free", // stable, 131K ctx
-  "nvidia/llama-3.1-nemotron-70b-instruct:free",
-  "google/gemma-3-27b-it:free",
-  "mistralai/mistral-nemo:free",
+  "qwen/qwen3-coder:free",                        // #1 coding 2026, 256K ctx
+  "deepseek/deepseek-r1-0528:free",               // razonamiento top, gratis
+  "meta-llama/llama-3.3-70b-instruct:free",       // estable, 131K ctx
+  "deepseek/deepseek-chat-v3-0324:free",          // muy bueno en código
+  "google/gemma-3-27b-it:free",                   // backup Google
+  "mistralai/mistral-nemo:free",                  // ligero y rápido
 ];
 
 let ACTIVE_MODEL    = FREE_MODEL_CANDIDATES[0]; // filled on startup
