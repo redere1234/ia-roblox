@@ -1,8 +1,10 @@
 // ════════════════════════════════════════════════════════════════
-//  RBX-AI Studio Server — v3 (OpenRouter Edition)
-//  Auto-selects best free coding model from OpenRouter
-//  Features: web_search, syntax guard, diff, undo, activity log,
-//            session stats, subagents, Pisces parity
+//  RBX-AI Studio Server — v4 PRO (OpenRouter Edition)
+//  Mejoras v4:
+//  - Streaming real token a token vía SSE
+//  - Conversaciones múltiples y persistentes en disco (./data)
+//  - Subida de archivos .lua/.luau/.txt/.rbxlx (la IA los analiza)
+//  - Syntax guard, web search, activity log, undo, stats
 // ════════════════════════════════════════════════════════════════
 
 const express        = require("express");
@@ -15,67 +17,63 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 app.use(cors());
 
-// Serve static files from the root directory (index.html lives next to server.js)
+// Servir index.html y estáticos desde el directorio raíz
 const PUBLIC_DIR = __dirname;
 app.use(express.static(PUBLIC_DIR));
 
-// Explicit fallback: serve index.html for GET /
-app.get("/", (req, res) => {
-  const indexPath = path.join(__dirname, "index.html");
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(200).send(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>RBX-AI Studio v3</title></head><body style="font-family:sans-serif;padding:2rem;background:#06090f;color:#c8d6e8">
-<h1>RBX-AI Studio v3</h1>
-<p>El servidor está corriendo pero <code>index.html</code> no se encontró en el directorio raíz.</p>
-<p>Asegúrate de que <code>index.html</code> esté en la raíz de tu repositorio junto a <code>server.js</code>.</p>
-<p>API status: <a href="/plugin/status" style="color:#38bdf8">/plugin/status</a></p>
-</body></html>`);
+// ─── Persistencia en disco ────────────────────────────────────
+const DATA_DIR = path.join(__dirname, "data");
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+function safeReadJSON(filePath, fallback) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed === undefined ? fallback : parsed;
+  } catch (_) { return fallback; }
+}
+
+function safeWriteJSON(filePath, data) {
+  try {
+    fs.writeFileSync(filePath + ".tmp", JSON.stringify(data, null, 2));
+    fs.renameSync(filePath + ".tmp", filePath);
+  } catch (err) {
+    console.error("[Persist] Error guardando", filePath, err.message);
   }
-});
+}
 
 // ─── OpenRouter Config ────────────────────────────────────────
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const OR_API_KEY      = process.env.OPENROUTER_API_KEY;
 
-// Ordered list of best free coding models (priority order).
-// Server auto-picks the first one that responds OK on startup.
-// All have :free suffix = $0 cost on OpenRouter.
-// openrouter/free elige automáticamente el mejor modelo gratis disponible.
-// Como respaldo manual si el router falla, usamos modelos conocidos estables.
+// ─── Railway / Producción ─────────────────────────────────────
+// En Railway la URL pública se define con la variable PUBLIC_URL
+// (opcional; se auto-detecta si está definida). El plugin la usa
+// para hacer polling sin que tengas que escribir la URL a mano.
+const PUBLIC_URL = process.env.PUBLIC_URL || "";
+const PLUGIN_TIMEOUT_MS = parseInt(process.env.PLUGIN_TIMEOUT_MS || "15000", 10);
+
 const FREE_MODEL_CANDIDATES = [
-  "openrouter/free",                              // router oficial OR — elige el mejor gratis
-  "qwen/qwen3-coder:free",                        // #1 coding 2026, 256K ctx
-  "meta-llama/llama-3.3-70b-instruct:free",       // estable, 131K ctx
-  "deepseek/deepseek-chat-v3-0324:free",          // bueno en código
-  "google/gemma-3-27b-it:free",                   // backup Google
+  "openrouter/free",                        // router oficial OR — elige el mejor gratis
+  "qwen/qwen3-coder:free",                  // #1 coding 2026, 256K ctx
+  "meta-llama/llama-3.3-70b-instruct:free", // estable, 131K ctx
+  "deepseek/deepseek-chat-v3-0324:free",    // bueno en código
+  "google/gemma-3-27b-it:free",             // backup Google
 ];
 
-let ACTIVE_MODEL    = FREE_MODEL_CANDIDATES[0]; // openrouter/free por defecto
-let modelResolved   = false;
+let ACTIVE_MODEL  = "openrouter/free";
+let modelResolved = false;
 
 async function pickBestFreeModel() {
-  // openrouter/free es el router oficial de OR — siempre disponible, sin probes necesarios.
-  // Los probes gastan requests del límite diario, así que los evitamos.
   ACTIVE_MODEL  = "openrouter/free";
   modelResolved = true;
   console.log("\n  ✅ Usando openrouter/free (router oficial — elige el mejor modelo gratis en tiempo real)\n");
 }
 
-// OpenRouter chat completion — con fallback automático si el modelo activo da 429
-async function orChat({ messages, tools, system, max_tokens = 8192 }) {
-  // Lista base segura nunca null
-  const base = (Array.isArray(FREE_MODEL_CANDIDATES) && FREE_MODEL_CANDIDATES.length > 0)
-    ? FREE_MODEL_CANDIDATES
-    : ["meta-llama/llama-3.3-70b-instruct:free", "google/gemma-3-27b-it:free", "mistralai/mistral-nemo:free"];
-
-  const activeIdx  = base.indexOf(ACTIVE_MODEL);
-  const candidates = activeIdx >= 0
-    ? [ACTIVE_MODEL, ...base.filter((_, i) => i !== activeIdx)]
-    : [ACTIVE_MODEL, ...base].filter(Boolean);
-
+// ─── Chat con streaming ───────────────────────────────────────
+// Devuelve un ReadableStream que va llegando token a token
+async function orChatStream({ messages, tools, system, max_tokens = 8192 }) {
   const OR_HEADERS = {
     "Authorization": `Bearer ${OR_API_KEY}`,
     "Content-Type":  "application/json",
@@ -83,102 +81,270 @@ async function orChat({ messages, tools, system, max_tokens = 8192 }) {
     "X-Title":       "RBX-AI Studio",
   };
 
-  let lastError;
-
-  for (const modelId of candidates) {
-    const body = {
-      model: modelId,
-      max_tokens,
-      messages: system
-        ? [{ role: "system", content: system }, ...messages]
-        : messages,
-    };
-    if (tools?.length) {
-      body.tools       = tools;
-      body.tool_choice = "auto";
-    }
-
-    let res;
-    try {
-      res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-        method: "POST",
-        headers: OR_HEADERS,
-        body: JSON.stringify(body),
-      });
-    } catch (netErr) {
-      lastError = new Error(`Error de red: ${netErr.message}`);
-      continue;
-    }
-
-    if (res.status === 429) {
-      let errJson = {};
-      try { errJson = await res.json(); } catch (_) {}
-      const limitSource = errJson?.error?.metadata?.limit_source || "";
-
-      // Límite de cuenta (no de upstream) — no tiene caso probar más modelos
-      if (limitSource.includes("openrouter_free_tier")) {
-        throw new Error(
-          "⚠ Límite diario de OpenRouter alcanzado (50 req/día gratuitas).\n" +
-          "Opciones:\n" +
-          "  1. Espera hasta medianoche UTC (reset automático)\n" +
-          "  2. Agrega $10 créditos en https://openrouter.ai/settings/billing\n" +
-          "  3. Cambia a Gemini API (1500 req/día gratis)"
-        );
-      }
-
-      // 429 upstream → prueba siguiente modelo
-      console.log(`  ⚠ 429 upstream en ${modelId} — probando siguiente...`);
-      lastError = new Error(`429 en ${modelId}`);
-      continue;
-    }
-
-    if (!res.ok) {
-      const err = await res.text();
-      lastError = new Error(`OpenRouter error ${res.status}: ${err}`);
-      continue;
-    }
-
-    const data   = await res.json();
-    const choice = data.choices?.[0];
-    const msg    = choice?.message;
-    if (!msg) { lastError = new Error("Respuesta vacía de OpenRouter"); continue; }
-
-    if (modelId !== ACTIVE_MODEL) {
-      console.log(`  ✅ Fallback exitoso → usando ${modelId}`);
-      ACTIVE_MODEL = modelId;
-    }
-
-    const content = [];
-    if (msg.content) content.push({ type: "text", text: msg.content });
-    if (msg.tool_calls?.length) {
-      for (const tc of msg.tool_calls) {
-        content.push({
-          type : "tool_use",
-          id   : tc.id,
-          name : tc.function.name,
-          input: JSON.parse(tc.function.arguments || "{}"),
-        });
-      }
-    }
-
-    return {
-      stop_reason: choice?.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
-      content,
-    };
+  const body = {
+    model     : ACTIVE_MODEL,
+    max_tokens,
+    stream    : true,
+    messages: system
+      ? [{ role: "system", content: system }, ...messages]
+      : messages,
+  };
+  if (tools?.length) {
+    body.tools       = tools;
+    body.tool_choice = "auto";
   }
 
-  throw lastError || new Error("Todos los modelos de OpenRouter fallaron. Intenta más tarde.");
+  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method : "POST",
+    headers: OR_HEADERS,
+    body   : JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    // 429 de cuenta (límite diario gratuito)
+    if (res.status === 429) {
+      throw new Error(
+        "⚠ Límite diario de OpenRouter alcanzado (50 req/día gratuitas).\n" +
+        "Opciones:\n" +
+        "  1. Espera hasta medianoche UTC (reset automático)\n" +
+        "  2. Agrega $10 créditos en https://openrouter.ai/settings/billing"
+      );
+    }
+    throw new Error(`OpenRouter error ${res.status}: ${errText.slice(0, 200)}`);
+  }
+
+  return res.body; // ReadableStream — SSE de OpenRouter
+}
+
+// ─── Chat sin streaming (para tool loop) ──────────────────────
+async function orChat({ messages, tools, system, max_tokens = 8192 }) {
+  const body = {
+    model     : ACTIVE_MODEL,
+    max_tokens,
+    messages: system
+      ? [{ role: "system", content: system }, ...messages]
+      : messages,
+  };
+  if (tools?.length) {
+    body.tools       = tools;
+    body.tool_choice = "auto";
+  }
+
+  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method : "POST",
+    headers: {
+      "Authorization": `Bearer ${OR_API_KEY}`,
+      "Content-Type":  "application/json",
+      "HTTP-Referer":  "https://rbx-ai-studio.local",
+      "X-Title":       "RBX-AI Studio",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error(
+        "⚠ Límite diario de OpenRouter alcanzado (50 req/día gratuitas).\n" +
+        "Espera hasta medianoche UTC o agrega créditos en https://openrouter.ai/settings/billing"
+      );
+    }
+    throw new Error(`OpenRouter error ${res.status}`);
+  }
+
+  const data   = await res.json();
+  const choice = data.choices?.[0];
+  const msg    = choice?.message;
+  if (!msg) throw new Error("Respuesta vacía de OpenRouter");
+
+  const content = [];
+  if (msg.content) content.push({ type: "text", text: msg.content });
+  if (msg.tool_calls?.length) {
+    for (const tc of msg.tool_calls) {
+      content.push({
+        type : "tool_use",
+        id   : tc.id,
+        name : tc.function.name,
+        input: (() => { try { return JSON.parse(tc.function.arguments || "{}"); } catch (_) { return {}; } })(),
+      });
+    }
+  }
+
+  return {
+    stop_reason: choice?.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
+    content,
+  };
 }
 
 // ─── Estado global ────────────────────────────────────────────
 
 let pluginLastPing       = 0;
 let pendingPluginCommand = null;
-let conversationHistory  = [];
 let scriptsIndexed       = 0;
 let sessionStart         = Date.now();
 const jobs               = new Map();
 const activityLog        = [];
+
+// ─── Gestión de conversaciones (múltiples, persistentes) ─────
+// conversations: { [id]: { id, title, createdAt, updatedAt, messages: [...], tokenCount } }
+let conversations = safeReadJSON(path.join(DATA_DIR, "conversations.json"), {});
+
+function saveConversations() {
+  safeWriteJSON(path.join(DATA_DIR, "conversations.json"), conversations);
+}
+
+function getCurrentConversationId() {
+  return (typeof globalThis.__currentChatId === "string" && conversations[globalThis.__currentChatId])
+    ? globalThis.__currentChatId
+    : null;
+}
+
+function setCurrentConversationId(id) {
+  globalThis.__currentChatId = id;
+  safeWriteJSON(path.join(DATA_DIR, "current-chat.json"), { id });
+}
+
+// Cargar el chat activo de la última sesión
+const savedCurrent = safeReadJSON(path.join(DATA_DIR, "current-chat.json"), { id: null });
+if (savedCurrent.id && conversations[savedCurrent.id]) {
+  globalThis.__currentChatId = savedCurrent.id;
+}
+
+// Normalizar historial interno al formato de bloque (robusto ante null)
+// Formato interno: [{role:"user", content:"..."}] y [{role:"assistant", content:[{type,text},{type,tool_use}]}]
+function getActiveMessages() {
+  const id = getCurrentConversationId();
+  return id ? (conversations[id]?.messages || []) : [];
+}
+
+function setActiveMessages(messages) {
+  const id = getCurrentConversationId();
+  if (!id) return;
+  const conv = conversations[id];
+  if (!conv) return;
+  conv.messages    = messages.slice(-60); // máximo 60 mensajes
+  conv.updatedAt   = Date.now();
+  conv.tokenCount  = conv.messages.reduce((acc, m) => {
+    const text = typeof m.content === "string" ? m.content : "";
+    const blocks = Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : "";
+    return acc + Math.ceil((text.length + blocks.length) / 4);
+  }, 0);
+  conversations[id] = conv;
+  saveConversations();
+}
+
+// ═══ API: conversaciones ═══
+
+app.get("/chats", (req, res) => {
+  const list = Object.values(conversations)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map(c => ({
+      id        : c.id,
+      title     : c.title,
+      createdAt : c.createdAt,
+      updatedAt : c.updatedAt,
+      active    : c.id === getCurrentConversationId(),
+    }));
+  res.json({ chats: list, current: getCurrentConversationId() });
+});
+
+app.post("/chats", (req, res) => {
+  const id = randomUUID();
+  const title = (req.body?.title || "Nueva conversación").slice(0, 80);
+  conversations[id] = {
+    id, title,
+    createdAt : Date.now(),
+    updatedAt : Date.now(),
+    messages  : [],
+    tokenCount: 0,
+  };
+  setCurrentConversationId(id);
+  res.json({ id, title });
+});
+
+app.delete("/chats/:id", (req, res) => {
+  const { id } = req.params;
+  if (!conversations[id]) return res.status(404).json({ error: "Chat no encontrado" });
+  delete conversations[id];
+  saveConversations();
+  if (getCurrentConversationId() === id) {
+    const next = Object.values(conversations).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    setCurrentConversationId(next ? next.id : null);
+  }
+  res.json({ ok: true });
+});
+
+app.post("/chats/:id/activate", (req, res) => {
+  const { id } = req.params;
+  if (!conversations[id]) return res.status(404).json({ error: "Chat no encontrado" });
+  setCurrentConversationId(id);
+  // Devolver el historial visual completo
+  const msgs = conversations[id].messages
+    .filter(m => m.role === "user" || m.role === "assistant")
+    .map(m => {
+      if (m.role === "assistant") {
+        const blocks = Array.isArray(m.content) ? m.content : [];
+        return {
+          role   : "assistant",
+          content: blocks.filter(b => b && b.type === "text").map(b => b.text).join("\n"),
+        };
+      }
+      return { role: "user", content: m.content };
+    });
+  res.json({ ok: true, messages: msgs });
+});
+
+app.post("/chat/reset", (req, res) => {
+  const id = randomUUID();
+  conversations[id] = {
+    id,
+    title   : "Nueva conversación",
+    createdAt : Date.now(),
+    updatedAt : Date.now(),
+    messages  : [],
+    tokenCount: 0,
+  };
+  setCurrentConversationId(id);
+  scriptsIndexed      = 0;
+  sessionStart        = Date.now();
+  activityLog.length  = 0;
+  console.log("[Chat] Sesión reiniciada →", id.slice(0, 8));
+  res.json({ ok: true, chat_id: id });
+});
+
+// ═══ Archivos adjuntos ═══
+const MAX_ATTACHMENTS = 5;
+const MAX_FILE_SIZE   = 2 * 1024 * 1024; // 2 MB
+const ALLOWED_EXT     = new Set([".lua", ".luau", ".txt", ".md", ".rbxlx", ".json", ".rbxm"]);
+
+app.post("/files/upload", (req, res) => {
+  const files = Array.isArray(req.body?.files) ? req.body.files : [];
+  if (!files.length) return res.status(400).json({ error: "No se enviaron archivos" });
+  if (files.length > MAX_ATTACHMENTS) return res.status(400).json({ error: `Máximo ${MAX_ATTACHMENTS} archivos` });
+
+  const summaries = [];
+  for (const f of files) {
+    const name = String(f.name || "archivo").slice(0, 100);
+    const ext  = path.extname(name).toLowerCase();
+    const content = String(f.content || "");
+
+    if (!ALLOWED_EXT.has(ext)) {
+      summaries.push({ name, error: `Extensión no soportada (${ext}). Usa .lua, .luau, .txt, .md, .json, .rbxlx` });
+      continue;
+    }
+    if (content.length > MAX_FILE_SIZE) {
+      summaries.push({ name, error: "Archivo demasiado grande (máx 2 MB)" });
+      continue;
+    }
+    summaries.push({
+      name,
+      ext,
+      chars  : content.length,
+      preview: content.slice(0, 3000),
+    });
+  }
+  res.json({ files: summaries });
+});
 
 // ─── Plugin Bridge ────────────────────────────────────────────
 
@@ -216,7 +382,7 @@ function execPlugin(command, data) {
         pendingPluginCommand = null;
         reject(new Error(`Plugin timeout en "${command}". ¿Está Roblox Studio abierto y conectado?`));
       }
-    }, 15000);
+    }, PLUGIN_TIMEOUT_MS);
     pendingPluginCommand = { id, command, data, resolve, reject, _timer };
   });
 }
@@ -224,6 +390,8 @@ function execPlugin(command, data) {
 // ─── Session & Activity endpoints ─────────────────────────────
 
 app.get("/session/stats", (req, res) => {
+  const id = getCurrentConversationId();
+  const conv = id ? conversations[id] : null;
   res.json({
     scriptsIndexed,
     activityCount : activityLog.length,
@@ -231,6 +399,7 @@ app.get("/session/stats", (req, res) => {
     connected     : Date.now() - pluginLastPing < 3000,
     model         : ACTIVE_MODEL,
     modelReady    : modelResolved,
+    currentChat   : conv ? { id: conv.id, title: conv.title, tokenCount: conv.tokenCount, msgCount: conv.messages.length } : null,
   });
 });
 
@@ -257,25 +426,22 @@ app.post("/activity/:id/undo", async (req, res) => {
 });
 
 // ─── Syntax guard (pre-flight Lua check) ──────────────────────
-// Catches unbalanced blocks, missing 'end', obvious API typos
 function luaSyntaxGuard(source) {
   const errors = [];
   const lines  = source.split("\n");
 
-  // Balance check: function/do/if/for/while vs end
   let depth = 0;
   const openers = /\b(function|do|if|for|while|repeat)\b/g;
   const closers = /\bend\b/g;
 
   for (const line of lines) {
-    const stripped = line.replace(/--.*$/, ""); // strip comments
+    const stripped = line.replace(/--.*$/, "");
     depth += (stripped.match(openers) || []).length;
     depth -= (stripped.match(closers) || []).length;
   }
   if (depth > 0) errors.push(`⚠ Faltan ${depth} 'end' — bloque sin cerrar`);
   if (depth < 0) errors.push(`⚠ ${Math.abs(depth)} 'end' de más`);
 
-  // Deprecated API check
   const deprecated = [
     ["wait(", "task.wait("],
     ["spawn(", "task.spawn("],
@@ -292,9 +458,8 @@ function luaSyntaxGuard(source) {
   return errors;
 }
 
-// ─── Web search via OpenRouter web tool ───────────────────────
+// ─── Web search via OpenRouter ────────────────────────────────
 async function webSearchForDocs(query) {
-  // Uses OR's built-in web search capability via the model
   const res = await orChat({
     max_tokens: 512,
     messages: [{
@@ -306,9 +471,67 @@ async function webSearchForDocs(query) {
   return res.content.find(b => b.type === "text")?.text || "Sin resultados";
 }
 
+// ─── Playtest en vivo ─────────────────────────────────────────
+// Estado del playtest en curso (llenado por POST /plugin/playtest/*)
+let activePlaytest = null;
+
+app.get("/plugin/playtest/status", (req, res) => {
+  res.json({ active: !!activePlaytest });
+});
+
+// El plugin confirma que el playtest arrancó (o reporta error)
+app.post("/plugin/playtest/start-result", (req, res) => {
+  const { playtestId, ready, error } = req.body;
+  if (activePlaytest && activePlaytest.playtestId === playtestId) {
+    clearTimeout(activePlaytest._timer);
+    if (error) {
+      const rej = activePlaytest.reject;
+      activePlaytest = null;
+      rej(new Error(error));
+    }
+  }
+  res.json({ ok: true });
+});
+
+// El plugin devuelve el reporte final del playtest (errores, output, eventos)
+app.post("/plugin/playtest/report", (req, res) => {
+  const { playtestId, report } = req.body;
+  if (activePlaytest && activePlaytest.playtestId === playtestId) {
+    clearTimeout(activePlaytest._timer);
+    activePlaytest.finish({ success: true, report: report || {} });
+    activePlaytest = null;
+  }
+  res.json({ ok: true });
+});
+
+function runPlaytest({ goal, actions, duration }) {
+  return new Promise((resolve, reject) => {
+    const playtestId = randomUUID();
+    const durSec = Math.min(90, Math.max(5, Math.floor(duration || 20)));
+    const _timer = setTimeout(() => {
+      if (activePlaytest?.playtestId === playtestId) {
+        activePlaytest = null;
+        reject(new Error(`Playtest timeout (${durSec}s). ¿Está Roblox Studio abierto?`));
+      }
+    }, (durSec + 60) * 1000);
+    activePlaytest = { playtestId, goal, actions, duration: durSec, reject, _timer, finish: resolve };
+    // El servidor pide al plugin lanzar el playtest (lo recoge en su próximo poll)
+    execPlugin("playtest_verify", { playtestId, goal, actions, duration: durSec })
+      .then(() => {
+        // El plugin aceptó el comando; el resultado llega por /plugin/playtest/report
+      })
+      .catch(err => {
+        clearTimeout(_timer);
+        if (activePlaytest?.playtestId === playtestId) {
+          activePlaytest = null;
+          reject(err);
+        }
+      });
+  });
+}
+
 // ─── Tools ────────────────────────────────────────────────────
 
-// Convert Anthropic-style tools to OpenRouter/OpenAI format
 function toORTools(tools) {
   return tools.map(t => ({
     type    : "function",
@@ -430,6 +653,12 @@ Ejecutas en OpenRouter usando ${ACTIVE_MODEL}.
 - **get_errors** — Captura errores del Output/runtime
 - **search_roblox_docs** — Busca docs actualizadas + DevForum en vivo
 
+## Archivos adjuntos
+El usuario puede adjuntar archivos de código (.lua, .luau, .txt, .md, .json, .rbxlx). Cuando lo haga:
+1. Analiza el contenido antes de responder
+2. Si son scripts, úsalos como contexto directo (no hace falta list_scripts para ese código)
+3. Si el usuario pide modificar un archivo adjunto, devuelve el código completo modificado en un bloque \`\`\`lua
+
 ## Flujo de trabajo obligatorio
 1. **INDEXA** con list_scripts si no sabes qué hay en el proyecto
 2. **BUSCA DOCS** con search_roblox_docs si la API es nueva o dudosa
@@ -437,7 +666,8 @@ Ejecutas en OpenRouter usando ${ACTIVE_MODEL}.
 4. **LEE** con read_script antes de cualquier write_script
 5. **ESCRIBE** con cirugía: preserva whitespace, comentarios y estructura
 6. **CAPTURA ERRORES** con get_errors si el dev reporta bugs en runtime
-7. **EXPLICA** qué debe probar el dev después de cada cambio
+7. **VERIFICA EN VIVO** con playtest_verify tras cambiar lógica de gameplay (máx 2 iteraciones de corrección)
+8. **EXPLICA** qué debe probar el dev después de cada cambio
 
 ## Equipo de especialistas internos
 Para tareas complejas actúa como un equipo:
@@ -463,7 +693,7 @@ Para tareas complejas actúa como un equipo:
 - Después de editar: "✓ [path] editado · Testea: [qué exactamente]"
 - Si hay errores del Output, analízalos primero antes de proponer soluciones`;
 
-// ─── Job system (SSE streaming) ───────────────────────────────
+// ─── Job system (SSE streaming token a token) ─────────────────
 
 function emitToJob(jobId, event) {
   const job = jobs.get(jobId);
@@ -473,44 +703,97 @@ function emitToJob(jobId, event) {
   job.listeners.forEach(fn => fn(data));
 }
 
-async function runJob(jobId, userMessage) {
+// Parsear el SSE de OpenRouter token a token y emitir eventos al frontend
+async function streamResponseToJob(jobId, readableStream, { onText, onDone, onError }) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    const reader = readableStream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // último fragmento incompleto
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") { onDone(); return; }
+        try {
+          const json = JSON.parse(payload);
+          const delta = json.choices?.[0]?.delta;
+          if (delta?.content) onText(delta.content);
+        } catch (_) { /* fragmento no válido, ignorar */ }
+      }
+    }
+    onDone();
+  } catch (err) {
+    onError(err);
+  }
+}
+
+async function runJob(jobId, userMessage, { attachments = [] } = {}) {
   try {
     emitToJob(jobId, { type: "thinking" });
 
-    // Convert stored history to OR format
-    const orHistory = conversationHistory.map(m => {
+    // 1. Construir contenido del mensaje de usuario (texto + adjuntos)
+    const activeMsgs = getActiveMessages();
+
+    // Convertir historial interno → formato OpenRouter
+    const orHistory = activeMsgs.map(m => {
       if (m.role === "assistant") {
-        // Re-assemble OR assistant message
-        const content = m.content
-          .filter(b => b.type === "text")
+        const blocks = Array.isArray(m.content) ? m.content : [];
+        const content = blocks
+          .filter(b => b && b.type === "text")
           .map(b => b.text)
           .join("\n");
-        const tool_calls = m.content
-          .filter(b => b.type === "tool_use")
+        const tool_calls = blocks
+          .filter(b => b && b.type === "tool_use")
           .map(b => ({
             id      : b.id,
             type    : "function",
             function: { name: b.name, arguments: JSON.stringify(b.input) },
           }));
-        return { role: "assistant", content: content || null, tool_calls: tool_calls.length ? tool_calls : undefined };
+        if (!content && !tool_calls.length) return null;
+        return { role: "assistant", content: content || undefined, tool_calls: tool_calls.length ? tool_calls : undefined };
       }
       if (m.role === "user" && Array.isArray(m.content)) {
-        // Tool results
+        // Bloques de tool_result
         const tool_results = m.content
-          .filter(b => b.type === "tool_result")
+          .filter(b => b && b.type === "tool_result")
           .map(b => ({
-            role       : "tool",
+            role        : "tool",
             tool_call_id: b.tool_use_id,
-            content    : b.content,
+            content     : b.content,
           }));
+        if (!tool_results.length) return null;
         return tool_results; // will be flattened
       }
       return m;
-    }).flat();
+    }).flat().filter(Boolean);
 
-    let currentMessages = [...orHistory, { role: "user", content: userMessage }];
+    // Mensaje de usuario: texto + contexto de archivos adjuntos
+    let userContent = userMessage;
+    if (attachments.length) {
+      const filesCtx = attachments
+        .filter(f => !f.error)
+        .map(f => `--- Archivo adjunto: ${f.name} (${f.ext || ""}, ${f.chars} caracteres) ---\n${f.preview || ""}`)
+        .join("\n\n");
+      userContent = `${userMessage}\n\n${filesCtx}\n--- Fin de archivos adjuntos ---`;
+      const errList = attachments.filter(f => f.error).map(f => `• ${f.name}: ${f.error}`).join("\n");
+      if (errList) {
+        emitToJob(jobId, { type: "file_error", files: errList });
+      }
+    }
+
+    let currentMessages = [...orHistory, { role: "user", content: userContent }];
     let response;
 
+    // 2. Tool loop (sin streaming: las respuestas de herramientas deben ser completas)
     while (true) {
       response = await orChat({
         messages  : currentMessages,
@@ -539,7 +822,6 @@ async function runJob(jobId, userMessage) {
         let originalSource = null;
         let syntaxWarnings = [];
 
-        // Capture original for undo
         if (toolUse.name === "write_script" && toolUse.input?.path) {
           try {
             const orig = await execPlugin("read_script", { path: toolUse.input.path });
@@ -547,7 +829,6 @@ async function runJob(jobId, userMessage) {
           } catch (_) { /* skip */ }
         }
 
-        // Run syntax guard before writing
         if ((toolUse.name === "write_script" || toolUse.name === "create_script") && toolUse.input?.source) {
           syntaxWarnings = luaSyntaxGuard(toolUse.input.source);
           if (syntaxWarnings.length) {
@@ -557,8 +838,9 @@ async function runJob(jobId, userMessage) {
 
         try {
           if (toolUse.name === "search_roblox_docs") {
-            // Internal web search — no plugin needed
             result = { summary: await webSearchForDocs(toolUse.input.query) };
+          } else if (toolUse.name === "playtest_verify") {
+            result = await runPlaytest(toolUse.input);
           } else {
             result = await execPlugin(toolUse.name, toolUse.input);
           }
@@ -610,8 +892,21 @@ async function runJob(jobId, userMessage) {
         });
       }
 
-      // Add assistant + tool results in OR format
-      const assistantMsg = {
+      // Asistente + tool results en formato interno + OpenRouter
+      const assistantMsgInternal = {
+        role      : "assistant",
+        content   : (() => {
+          const out = [];
+          const textBlock = response.content.find(b => b.type === "text");
+          if (textBlock) out.push({ type: "text", text: textBlock.text });
+          for (const b of response.content.filter(b => b.type === "tool_use")) {
+            out.push({ type: "tool_use", id: b.id, name: b.name, input: b.input });
+          }
+          return out;
+        })(),
+      };
+
+      const assistantMsgOR = {
         role      : "assistant",
         content   : response.content.find(b => b.type === "text")?.text || null,
         tool_calls: response.content
@@ -623,9 +918,20 @@ async function runJob(jobId, userMessage) {
           })),
       };
 
+      const toolResultMsg = {
+        role   : "user",
+        content: [
+          ...toolResults.map(tr => ({ type: "tool_result", tool_use_id: tr.tool_use_id, content: tr.content })),
+        ],
+      };
+
+      // Guardar en el historial interno (persistente)
+      const newActiveMsgs = [...activeMsgs, assistantMsgInternal, toolResultMsg];
+      setActiveMessages(newActiveMsgs);
+
       currentMessages = [
         ...currentMessages,
-        assistantMsg,
+        assistantMsgOR,
         ...toolResults.map(tr => ({
           role        : "tool",
           tool_call_id: tr.tool_use_id,
@@ -634,15 +940,50 @@ async function runJob(jobId, userMessage) {
       ];
     }
 
-    const text = response.content
-      .filter(b => b.type === "text")
-      .map(b => b.text)
-      .join("\n");
+    // 3. Streaming token a token de la respuesta final
+    const textChunks = [];
+    const streamRes = await orChatStream({
+      messages  : currentMessages,
+      tools     : OR_TOOLS,
+      system    : SYSTEM_PROMPT,
+      max_tokens: 8192,
+    });
 
-    // Store history (keep last 20 turns)
-    conversationHistory = currentMessages.slice(-40);
+    await new Promise((resolve, reject) => {
+      streamResponseToJob(jobId, streamRes, {
+        onText  : chunk => { textChunks.push(chunk); emitToJob(jobId, { type: "text", content: chunk, partial: true }); },
+        onDone  : () => {
+          const fullText = textChunks.join("");
+          emitToJob(jobId, { type: "text", content: fullText, partial: false });
+          resolve();
+        },
+        onError : err => {
+          // Si el streaming falla, intentar respuesta completa de respaldo
+          orChat({ messages: currentMessages, tools: OR_TOOLS, system: SYSTEM_PROMPT })
+            .then(resp => {
+              const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+              emitToJob(jobId, { type: "text", content: text, partial: false });
+              resolve();
+            })
+            .catch(reject);
+        },
+      });
+    });
 
-    emitToJob(jobId, { type: "text", content: text });
+    // Guardar la respuesta del asistente en el historial
+    const finalText = textChunks.join("");
+    const finalActiveMsgs = getActiveMessages();
+    finalActiveMsgs.push({ role: "assistant", content: [{ type: "text", text: finalText || "✓" }] });
+    setActiveMessages(finalActiveMsgs);
+
+    // Título automático en el primer turno
+    const conv = getCurrentConversationId();
+    if (conv && conversations[conv].title === "Nueva conversación") {
+      const title = userMessage.slice(0, 40);
+      conversations[conv].title = title + (userMessage.length > 40 ? "…" : "");
+      saveConversations();
+    }
+
     emitToJob(jobId, { type: "done" });
     const job = jobs.get(jobId);
     if (job) job.status = "done";
@@ -654,29 +995,44 @@ async function runJob(jobId, userMessage) {
     if (job) job.status = "error";
   }
 
+  // Limpiar job de la memoria tras 10 minutos
   setTimeout(() => jobs.delete(jobId), 10 * 60 * 1000);
 }
 
-// ─── Chat endpoints ────────────────────────────────────────────
+// ─── Chat endpoints ───────────────────────────────────────────
 
 app.post("/chat", (req, res) => {
-  const { message } = req.body;
+  const { message, attachments } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: "Mensaje requerido" });
+
+  // Auto-crear chat si no hay uno activo
+  if (!getCurrentConversationId()) {
+    const id = randomUUID();
+    conversations[id] = {
+      id,
+      title   : "Nueva conversación",
+      createdAt : Date.now(),
+      updatedAt : Date.now(),
+      messages  : [],
+      tokenCount: 0,
+    };
+    setCurrentConversationId(id);
+  }
 
   const jobId = randomUUID();
   jobs.set(jobId, { status: "running", events: [], listeners: [] });
   console.log(`\n[Chat] "${message.slice(0, 70)}${message.length > 70 ? "..." : ""}"`);
-  runJob(jobId, message.trim());
-  res.json({ job_id: jobId });
+  runJob(jobId, message.trim(), { attachments: attachments || [] });
+  res.json({ job_id: jobId, chat_id: getCurrentConversationId() });
 });
 
 app.get("/chat/stream/:id", (req, res) => {
   const job = jobs.get(req.params.id);
 
-  res.setHeader("Content-Type",     "text/event-stream");
-  res.setHeader("Cache-Control",    "no-cache");
-  res.setHeader("Connection",       "keep-alive");
-  res.setHeader("X-Accel-Buffering","no");
+  res.setHeader("Content-Type",      "text/event-stream");
+  res.setHeader("Cache-Control",     "no-cache");
+  res.setHeader("Connection",        "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
 
   if (!job) {
     res.write("data: " + JSON.stringify({ type: "error", message: "Job no encontrado" }) + "\n\n");
@@ -698,15 +1054,6 @@ app.get("/chat/stream/:id", (req, res) => {
   });
 });
 
-app.post("/chat/reset", (req, res) => {
-  conversationHistory = [];
-  scriptsIndexed      = 0;
-  sessionStart        = Date.now();
-  activityLog.length  = 0;
-  console.log("[Chat] Sesión reiniciada");
-  res.json({ ok: true });
-});
-
 app.get("/model", (req, res) => {
   res.json({ model: ACTIVE_MODEL, ready: modelResolved, candidates: FREE_MODEL_CANDIDATES });
 });
@@ -723,12 +1070,27 @@ async function start() {
 
   await pickBestFreeModel();
 
+  // Auto-crear chat por defecto si no hay ninguno
+  if (!Object.keys(conversations).length) {
+    const id = randomUUID();
+    conversations[id] = {
+      id,
+      title   : "Nueva conversación",
+      createdAt : Date.now(),
+      updatedAt : Date.now(),
+      messages  : [],
+      tokenCount: 0,
+    };
+    setCurrentConversationId(id);
+  }
+
   app.listen(PORT, () => {
     console.log("╔══════════════════════════════════════════╗");
-    console.log("║  🤖  RBX-AI Studio  v3 (OpenRouter)      ║");
-    console.log(`║  Modelo  → ${ACTIVE_MODEL.padEnd(31)}║`);
+    console.log("║  🤖  RBX-AI Studio  v4 PRO (OpenRouter)  ║");
+    console.log(`║  Modelo  → ${ACTIVE_MODEL.padEnd(30)}║`);
     console.log(`║  Chat    → http://localhost:${PORT}           ║`);
     console.log(`║  Plugin  → http://localhost:${PORT}/plugin    ║`);
+    console.log(`║  Datos   → ${DATA_DIR.padEnd(33)}║`);
     console.log("╚══════════════════════════════════════════╝\n");
   });
 }

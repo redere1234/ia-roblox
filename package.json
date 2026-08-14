@@ -1,17 +1,15 @@
 {
   "name": "rbx-ai-studio",
-  "version": "3.0.0",
-  "description": "AI agent for Roblox Studio — powered by OpenRouter (free models, auto-selected)",
+  "version": "2.0.0",
+  "description": "AI agent that reads, writes, searches and debugs your Roblox Studio project",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev":   "node --watch server.js"
   },
   "dependencies": {
-    "cors":    "^2.8.5",
-    "express": "^4.19.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "@anthropic-ai/sdk": "^0.30.0",
+    "cors":              "^2.8.5",
+    "express":           "^4.19.0"
   }
 }

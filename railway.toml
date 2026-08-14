@@ -1,0 +1,11 @@
+# Railway — configuración de despliegue
+# No necesitas cambiar nada aquí; Railway lee $PORT automáticamente.
+# Variables de entorno a añadir en el panel de Railway:
+#   OPENROUTER_API_KEY  → tu clave (https://openrouter.ai/keys)
+#   PUBLIC_URL          → https://tu-dominio.up.railway.app  (opcional, para el plugin)
+
+[deploy]
+  startCommand = "node server.js"
+  healthcheckPath = "/plugin/status"
+  healthcheckInterval = 60
+  restartPolicyType = "ON_FAILURE"
