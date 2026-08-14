@@ -57,18 +57,18 @@ He incluido un notebook listo: **`colab_server.ipynb`** en el repo. Cómo usarlo
 
 1. Abre [colab.research.google.com](https://colab.research.google.com) → **File → Open notebook → GitHub** → pega la URL de tu repo y elige `colab_server.ipynb`.
 
+1. **Requisito único (la primera vez):** crea una cuenta gratis en [ngrok.com](https://dashboard.ngrok.com/signup) y copia tu authtoken de [esta página](https://dashboard.ngrok.com/get-started/your-authtoken) (botón "Your Authtoken").
+
 1. Haz clic en **Connect** (arriba a la derecha) y luego en ▶ sobre la primera celda. La celda:
+  - Te pide tu **authtoken de ngrok** (con `prompt`, solo vive en la sesión)
   - Clona/lee tus archivos
   - Te pide tu `OPENROUTER_API_KEY` (se guarda solo en la sesión, no en ningún lado)
-  - Monta el servidor en el puerto 8080 (escuchando en `0.0.0.0`, clave para que el túnel funcione)
-  - Crea un **túnel Cloudflare gratis** (sin registro) apuntando a `http://127.0.0.1:8080`, y espera hasta 60 s a que la URL esté viva
-  - Imprime la URL pública tipo `https://algo-trycloudflare.com`
+  - Instala ngrok, registra el token, arranca el servidor en el puerto 8080 (escuchando en `0.0.0.0`) y crea el túnel público
+  - Verifica con polling hasta que la URL responde 200 y te la imprime
 
-1. **Abre la URL en una pestaña NUEVA del navegador** (no dentro de Colab). La primera vez Cloudflare puede pedirte escribir **allow**: hazlo y la URL queda activa.
+1. **Abre la URL en una pestaña NUEVA del navegador** (no dentro de Colab) y pégala en la ventana **RBX-AI Bridge** del plugin en Roblox Studio. La URL es tipo `https://XXXX.ngrok-free.app` — sin pantallas intermedias.
 
-1. Conecta el plugin de Studio apuntando a esa URL con HTTPS.
-
-**Si la URL sale caída o con error 502:** el fallo típico es que el servidor escuchaba solo en IPv6 (`::`) y el túnel resolvía `localhost` como `::1` → "connection refused" permanente y URL muerta. Está corregido: servidor en `0.0.0.0`, túnel sobre `127.0.0.1` con protocolo QUIC, y el notebook verifica con polling hasta que la URL responde 200 antes de dártela. Si aun así falla, la celda incluye la **Opción A: el proxy oficial de Colab** (`serve_kernel_port_as_window`), que no usa túneles externos y es la opción más estable de todas.
+**Ventajas de ngrok frente a los quick tunnels de Cloudflare:** URLs estables que no dan 502 por conflictos de IPv6/IPv4, sin página de "allow", log limpio que el notebook lee automáticamente, y el plan gratuito da 3 túneles simultáneos y 10 GB de tráfico al mes — más que de sobra para uso personal. Única pega: el aviso inicial de ngrok en el navegador se salta con un clic en "Click here to continue".
 
 **Flujo recomendado personal:** Colab cuando trabajas intensamente varias horas seguidas (0 coste, URL instantánea ), Railway cuando quieres algo fijo que sobrevive a cierres del navegador (URL permanente, sin arrancar nada). Puedes usar ambos con el mismo plugin, solo cambia la URL del servidor.
 
