@@ -374,6 +374,20 @@ app.get("/plugin/status", (req, res) => {
   res.json({ connected: Date.now() - pluginLastPing < 3000 });
 });
 
+// Descarga del plugin de Studio (un solo archivo .lua, sin servidor propio)
+app.get("/plugin/download", (req, res) => {
+  const pluginPath = path.join(__dirname, "rbxai_plugin.lua");
+  if (!fs.existsSync(pluginPath)) {
+    return res.status(404).json({ error: "rbxai_plugin.lua no encontrado en el servidor" });
+  }
+  res.download(pluginPath, "rbxai_plugin.lua");
+});
+
+// Evento informativo del plugin (logs del cliente, no críticos)
+app.post("/plugin/event", (req, res) => {
+  res.json({ ok: true });
+});
+
 function execPlugin(command, data) {
   return new Promise((resolve, reject) => {
     const id     = randomUUID();
