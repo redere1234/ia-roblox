@@ -109,59 +109,88 @@ async function pickBestFreeModel() {
   modelResolved = true;
 }
 
-// OpenRouter chat completion (supports tool_choice / tools)
+// OpenRouter chat completion — con fallback automático si el modelo activo da 429
 async function orChat({ messages, tools, system, max_tokens = 8192 }) {
-  const body = {
-    model: ACTIVE_MODEL,
-    max_tokens,
-    messages: system
-      ? [{ role: "system", content: system }, ...messages]
-      : messages,
+  // Construye lista de modelos a intentar: activo primero, resto como respaldo
+  const activeIdx  = FREE_MODEL_CANDIDATES.indexOf(ACTIVE_MODEL);
+  const candidates = activeIdx >= 0
+    ? [ACTIVE_MODEL, ...FREE_MODEL_CANDIDATES.filter((_, i) => i !== activeIdx)]
+    : [ACTIVE_MODEL, ...FREE_MODEL_CANDIDATES];
+
+  const OR_HEADERS = {
+    "Authorization": `Bearer ${OR_API_KEY}`,
+    "Content-Type":  "application/json",
+    "HTTP-Referer":  "https://rbx-ai-studio.local",
+    "X-Title":       "RBX-AI Studio",
   };
-  if (tools?.length) {
-    body.tools        = tools;
-    body.tool_choice  = "auto";
-  }
 
-  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${OR_API_KEY}`,
-      "Content-Type":  "application/json",
-      "HTTP-Referer":  "https://rbx-ai-studio.local",
-      "X-Title":       "RBX-AI Studio",
-    },
-    body: JSON.stringify(body),
-  });
+  let lastError;
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenRouter error ${res.status}: ${err}`);
-  }
-
-  const data    = await res.json();
-  const choice  = data.choices?.[0];
-  const msg     = choice?.message;
-  if (!msg) throw new Error("Respuesta vacía de OpenRouter");
-
-  // Normalize to Anthropic-style content blocks for reuse
-  const content = [];
-  if (msg.content) content.push({ type: "text", text: msg.content });
-  if (msg.tool_calls?.length) {
-    for (const tc of msg.tool_calls) {
-      content.push({
-        type : "tool_use",
-        id   : tc.id,
-        name : tc.function.name,
-        input: JSON.parse(tc.function.arguments || "{}"),
-      });
+  for (const modelId of candidates) {
+    const body = {
+      model: modelId,
+      max_tokens,
+      messages: system
+        ? [{ role: "system", content: system }, ...messages]
+        : messages,
+    };
+    if (tools?.length) {
+      body.tools       = tools;
+      body.tool_choice = "auto";
     }
+
+    const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: "POST",
+      headers: OR_HEADERS,
+      body: JSON.stringify(body),
+    });
+
+    // 429 → modelo saturado, prueba el siguiente
+    if (res.status === 429) {
+      const errText = await res.text();
+      console.log(`  ⚠ 429 en ${modelId} — probando siguiente modelo...`);
+      lastError = new Error(`OpenRouter error 429 (${modelId}): ${errText}`);
+      continue;
+    }
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenRouter error ${res.status}: ${err}`);
+    }
+
+    const data   = await res.json();
+    const choice = data.choices?.[0];
+    const msg    = choice?.message;
+    if (!msg) throw new Error("Respuesta vacía de OpenRouter");
+
+    // Si tuvimos que cambiar de modelo, actualizamos ACTIVE_MODEL
+    if (modelId !== ACTIVE_MODEL) {
+      console.log(`  ✅ Fallback exitoso → usando ${modelId}`);
+      ACTIVE_MODEL = modelId;
+    }
+
+    // Normalize to Anthropic-style content blocks
+    const content = [];
+    if (msg.content) content.push({ type: "text", text: msg.content });
+    if (msg.tool_calls?.length) {
+      for (const tc of msg.tool_calls) {
+        content.push({
+          type : "tool_use",
+          id   : tc.id,
+          name : tc.function.name,
+          input: JSON.parse(tc.function.arguments || "{}"),
+        });
+      }
+    }
+
+    return {
+      stop_reason: choice?.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
+      content,
+    };
   }
 
-  return {
-    stop_reason: choice?.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
-    content,
-  };
+  // Todos los modelos fallaron
+  throw lastError || new Error("Todos los modelos de OpenRouter están saturados. Intenta en unos minutos.");
 }
 
 // ─── Estado global ────────────────────────────────────────────
