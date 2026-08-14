@@ -111,11 +111,15 @@ async function pickBestFreeModel() {
 
 // OpenRouter chat completion — con fallback automático si el modelo activo da 429
 async function orChat({ messages, tools, system, max_tokens = 8192 }) {
-  // Construye lista de modelos a intentar: activo primero, resto como respaldo
-  const activeIdx  = FREE_MODEL_CANDIDATES.indexOf(ACTIVE_MODEL);
+  // Lista base segura nunca null
+  const base = (Array.isArray(FREE_MODEL_CANDIDATES) && FREE_MODEL_CANDIDATES.length > 0)
+    ? FREE_MODEL_CANDIDATES
+    : ["meta-llama/llama-3.3-70b-instruct:free", "google/gemma-3-27b-it:free", "mistralai/mistral-nemo:free"];
+
+  const activeIdx  = base.indexOf(ACTIVE_MODEL);
   const candidates = activeIdx >= 0
-    ? [ACTIVE_MODEL, ...FREE_MODEL_CANDIDATES.filter((_, i) => i !== activeIdx)]
-    : [ACTIVE_MODEL, ...FREE_MODEL_CANDIDATES];
+    ? [ACTIVE_MODEL, ...base.filter((_, i) => i !== activeIdx)]
+    : [ACTIVE_MODEL, ...base].filter(Boolean);
 
   const OR_HEADERS = {
     "Authorization": `Bearer ${OR_API_KEY}`,
@@ -139,37 +143,56 @@ async function orChat({ messages, tools, system, max_tokens = 8192 }) {
       body.tool_choice = "auto";
     }
 
-    const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: "POST",
-      headers: OR_HEADERS,
-      body: JSON.stringify(body),
-    });
+    let res;
+    try {
+      res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+        method: "POST",
+        headers: OR_HEADERS,
+        body: JSON.stringify(body),
+      });
+    } catch (netErr) {
+      lastError = new Error(`Error de red: ${netErr.message}`);
+      continue;
+    }
 
-    // 429 → modelo saturado, prueba el siguiente
     if (res.status === 429) {
-      const errText = await res.text();
-      console.log(`  ⚠ 429 en ${modelId} — probando siguiente modelo...`);
-      lastError = new Error(`OpenRouter error 429 (${modelId}): ${errText}`);
+      let errJson = {};
+      try { errJson = await res.json(); } catch (_) {}
+      const limitSource = errJson?.error?.metadata?.limit_source || "";
+
+      // Límite de cuenta (no de upstream) — no tiene caso probar más modelos
+      if (limitSource.includes("openrouter_free_tier")) {
+        throw new Error(
+          "⚠ Límite diario de OpenRouter alcanzado (50 req/día gratuitas).\n" +
+          "Opciones:\n" +
+          "  1. Espera hasta medianoche UTC (reset automático)\n" +
+          "  2. Agrega $10 créditos en https://openrouter.ai/settings/billing\n" +
+          "  3. Cambia a Gemini API (1500 req/día gratis)"
+        );
+      }
+
+      // 429 upstream → prueba siguiente modelo
+      console.log(`  ⚠ 429 upstream en ${modelId} — probando siguiente...`);
+      lastError = new Error(`429 en ${modelId}`);
       continue;
     }
 
     if (!res.ok) {
       const err = await res.text();
-      throw new Error(`OpenRouter error ${res.status}: ${err}`);
+      lastError = new Error(`OpenRouter error ${res.status}: ${err}`);
+      continue;
     }
 
     const data   = await res.json();
     const choice = data.choices?.[0];
     const msg    = choice?.message;
-    if (!msg) throw new Error("Respuesta vacía de OpenRouter");
+    if (!msg) { lastError = new Error("Respuesta vacía de OpenRouter"); continue; }
 
-    // Si tuvimos que cambiar de modelo, actualizamos ACTIVE_MODEL
     if (modelId !== ACTIVE_MODEL) {
       console.log(`  ✅ Fallback exitoso → usando ${modelId}`);
       ACTIVE_MODEL = modelId;
     }
 
-    // Normalize to Anthropic-style content blocks
     const content = [];
     if (msg.content) content.push({ type: "text", text: msg.content });
     if (msg.tool_calls?.length) {
@@ -189,8 +212,7 @@ async function orChat({ messages, tools, system, max_tokens = 8192 }) {
     };
   }
 
-  // Todos los modelos fallaron
-  throw lastError || new Error("Todos los modelos de OpenRouter están saturados. Intenta en unos minutos.");
+  throw lastError || new Error("Todos los modelos de OpenRouter fallaron. Intenta más tarde.");
 }
 
 // ─── Estado global ────────────────────────────────────────────
