@@ -43,70 +43,25 @@ const OR_API_KEY      = process.env.OPENROUTER_API_KEY;
 // Ordered list of best free coding models (priority order).
 // Server auto-picks the first one that responds OK on startup.
 // All have :free suffix = $0 cost on OpenRouter.
+// openrouter/free elige automáticamente el mejor modelo gratis disponible.
+// Como respaldo manual si el router falla, usamos modelos conocidos estables.
 const FREE_MODEL_CANDIDATES = [
+  "openrouter/free",                              // router oficial OR — elige el mejor gratis
   "qwen/qwen3-coder:free",                        // #1 coding 2026, 256K ctx
-  "deepseek/deepseek-r1-0528:free",               // razonamiento top, gratis
   "meta-llama/llama-3.3-70b-instruct:free",       // estable, 131K ctx
-  "deepseek/deepseek-chat-v3-0324:free",          // muy bueno en código
+  "deepseek/deepseek-chat-v3-0324:free",          // bueno en código
   "google/gemma-3-27b-it:free",                   // backup Google
-  "mistralai/mistral-nemo:free",                  // ligero y rápido
 ];
 
-let ACTIVE_MODEL    = FREE_MODEL_CANDIDATES[0]; // filled on startup
+let ACTIVE_MODEL    = FREE_MODEL_CANDIDATES[0]; // openrouter/free por defecto
 let modelResolved   = false;
 
 async function pickBestFreeModel() {
-  console.log("\n  🔍 Detectando mejor modelo gratuito en OpenRouter...");
-  const headers = {
-    "Authorization": `Bearer ${OR_API_KEY}`,
-    "Content-Type":  "application/json",
-    "HTTP-Referer":  "https://rbx-ai-studio.local",
-    "X-Title":       "RBX-AI Studio",
-  };
-
-  // First, fetch live free models from OR API and filter by coding
-  try {
-    const res  = await fetch(`${OPENROUTER_BASE}/models`, { headers });
-    const data = await res.json();
-    if (data?.data) {
-      const free = data.data
-        .filter(m => m.pricing?.prompt === "0" && m.pricing?.completion === "0")
-        .map(m => m.id);
-      console.log(`  ✓ OR reporta ${free.length} modelos gratuitos en vivo`);
-
-      // Re-order candidates keeping only those confirmed free right now
-      const confirmed = FREE_MODEL_CANDIDATES.filter(c => free.includes(c));
-      if (confirmed.length > 0) {
-        FREE_MODEL_CANDIDATES.splice(0, FREE_MODEL_CANDIDATES.length, ...confirmed);
-        console.log(`  ✓ Confirmados: ${confirmed.join(", ")}`);
-      }
-    }
-  } catch (e) {
-    console.log("  ⚠ No se pudo consultar lista de modelos, usando lista fija");
-  }
-
-  // Probe each candidate with a tiny request
-  for (const modelId of FREE_MODEL_CANDIDATES) {
-    try {
-      const probe = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: modelId,
-          max_tokens: 5,
-          messages: [{ role: "user", content: "hi" }],
-        }),
-      });
-      if (probe.ok) {
-        ACTIVE_MODEL  = modelId;
-        modelResolved = true;
-        console.log(`  ✅ Modelo seleccionado: ${ACTIVE_MODEL}\n`);
-        return;
-      }
-    } catch (_) { /* try next */ }
-  }
-  console.log(`  ⚠ Ningún modelo respondió, usando ${ACTIVE_MODEL} de todos modos\n`);
+  // openrouter/free es el router oficial de OR — siempre disponible, sin probes necesarios.
+  // Los probes gastan requests del límite diario, así que los evitamos.
+  ACTIVE_MODEL  = "openrouter/free";
   modelResolved = true;
+  console.log("\n  ✅ Usando openrouter/free (router oficial — elige el mejor modelo gratis en tiempo real)\n");
 }
 
 // OpenRouter chat completion — con fallback automático si el modelo activo da 429
