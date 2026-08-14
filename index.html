@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RBX-AI Studio v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/lua.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+<style>
+/* ── Reset ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #06090f;
+  --surface:     #0b1120;
+  --surface2:    #0f1929;
+  --surface3:    #132033;
+  --border:      #1a2d44;
+  --border2:     #243d58;
+  --accent:      #38bdf8;
+  --accent-dim:  rgba(56,189,248,.10);
+  --accent-glow: rgba(56,189,248,.20);
+  --user-color:  #a78bfa;
+  --user-dim:    rgba(167,139,250,.10);
+  --green:       #34d399;
+  --green-dim:   rgba(52,211,153,.12);
+  --orange:      #f59e0b;
+  --orange-dim:  rgba(245,158,11,.12);
+  --orange-glow: rgba(245,158,11,.25);
+  --red:         #f87171;
+  --red-dim:     rgba(248,113,113,.12);
+  --yellow:      #fbbf24;
+  --text:        #c8d6e8;
+  --text-muted:  #4e6882;
+  --text-dim:    #263a50;
+  --font-ui:    'Space Grotesk', sans-serif;
+  --font-body:  'Inter', sans-serif;
+  --font-mono:  'JetBrains Mono', monospace;
+  --radius:     8px;
+  --radius-lg:  14px;
+  --sidebar-w:  260px;
+  --log-w:      300px;
+  --header-h:   52px;
+}
+
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ────────────────────────────────────────────────── */
+header {
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.panel-toggle {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.panel-toggle:hover, .panel-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.logo {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-ui); font-weight: 700; font-size: 15px;
+  color: var(--accent); letter-spacing: -0.3px;
+  text-decoration: none; white-space: nowrap;
+}
+.logo-icon {
+  width: 26px; height: 26px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  border-radius: 7px;
+  display: grid; place-items: center; font-size: 13px;
+}
+.logo-ver {
+  font-size: 9px; font-family: var(--font-mono); font-weight: 500;
+  color: var(--text-muted); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 1px 5px; letter-spacing: 0.05em;
+}
+
+.header-spacer { flex: 1; }
+
+.stat-pill {
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted);
+  padding: 3px 8px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  white-space: nowrap;
+}
+.stat-pill .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-dim); transition: all 0.3s;
+  flex-shrink: 0;
+}
+.stat-pill.connected { border-color: var(--green); color: var(--green); }
+.stat-pill.connected .dot {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+#scripts-stat, #activity-stat {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted); white-space: nowrap;
+}
+
+.btn-ghost {
+  background: none; border: 1px solid var(--border);
+  color: var(--text-muted); font-family: var(--font-ui);
+  font-size: 11px; font-weight: 500;
+  padding: 4px 10px; border-radius: 6px;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-ghost:hover {
+  border-color: var(--border2); color: var(--text);
+  background: var(--surface2);
+}
+
+/* ── App body layout ───────────────────────────────────────── */
+#app-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Left Sidebar: Script Browser ──────────────────────────── */
+#sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.2s ease, opacity 0.2s ease;
+}
+#sidebar.hidden { width: 0; opacity: 0; pointer-events: none; }
+
+.sidebar-head {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-head h3 {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.sidebar-search {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text); outline: none;
+  transition: border-color 0.15s;
+}
+.sidebar-search:focus { border-color: var(--accent); }
+.sidebar-search::placeholder { color: var(--text-dim); }
+
+#script-tree {
+  flex: 1; overflow-y: auto;
+  padding: 6px 0;
+}
+#script-tree::-webkit-scrollbar { width: 3px; }
+#script-tree::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.tree-empty {
+  padding: 16px 12px; text-align: center;
+  color: var(--text-dim); font-size: 11px; line-height: 1.7;
+  font-family: var(--font-mono);
+}
+
+.tree-group { margin-bottom: 2px; }
+
+.tree-group-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--text-muted); letter-spacing: 0.05em;
+  cursor: pointer; transition: color 0.15s;
+  user-select: none;
+}
+.tree-group-header:hover { color: var(--text); }
+.tree-group-header .arrow { font-size: 8px; transition: transform 0.15s; }
+.tree-group-header.collapsed .arrow { transform: rotate(-90deg); }
+.tree-group-count {
+  margin-left: auto;
+  font-size: 9px; color: var(--text-dim);
+  background: var(--surface2); border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.tree-items { display: flex; flex-direction: column; }
+.tree-items.hidden { display: none; }
+
+.tree-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 12px 3px 22px;
+  cursor: pointer; transition: background 0.1s;
+  border-radius: 0;
+}
+.tree-item:hover { background: var(--surface2); }
+.tree-item:hover .tree-item-label { color: var(--text); }
+
+.tree-item-icon {
+  font-size: 10px; flex-shrink: 0;
+  width: 14px; text-align: center;
+}
+.tree-item-label {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tree-item-lines {
+  font-family: var(--font-mono); font-size: 9px;
+  color: var(--text-dim); flex-shrink: 0;
+}
+
+/* ── Main chat area ────────────────────────────────────────── */
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+#chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 0;
+  scroll-behavior: smooth;
+}
+#chat::-webkit-scrollbar { width: 4px; }
+#chat::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.messages-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+/* ── Welcome ───────────────────────────────────────────────── */
+#welcome {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; gap: 16px; padding: 48px 20px;
+}
+.welcome-icon {
+  width: 52px; height: 52px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  border-radius: 14px;
+  display: grid; place-items: center; font-size: 22px;
+  margin-bottom: 2px;
+}
+.welcome-title {
+  font-family: var(--font-ui); font-size: 20px; font-weight: 700;
+  color: var(--text); letter-spacing: -0.3px;
+}
+.welcome-sub {
+  font-size: 13px; color: var(--text-muted);
+  max-width: 380px; line-height: 1.75;
+}
+
+.welcome-section-label {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase;
+  margin-top: 8px; align-self: flex-start; width: 100%;
+  max-width: 500px;
+}
+.welcome-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  justify-content: flex-start; width: 100%; max-width: 500px;
+}
+.chip {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 13px;
+  font-size: 12px; cursor: pointer; transition: all 0.15s;
+  color: var(--text-muted);
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* ── Messages ──────────────────────────────────────────────── */
+.message { display: flex; gap: 12px; animation: fadeIn 0.2s ease-out; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+.message.user { flex-direction: row-reverse; }
+
+.avatar {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: grid; place-items: center; font-size: 12px;
+  flex-shrink: 0; font-family: var(--font-mono); font-weight: 500;
+}
+.message.ai   .avatar { background: var(--accent-dim); border: 1px solid var(--accent-glow); color: var(--accent); }
+.message.user .avatar { background: var(--user-dim);   border: 1px solid rgba(167,139,250,.25); color: var(--user-color); }
+
+.message-body { flex: 1; min-width: 0; }
+
+.user-bubble {
+  background: var(--user-dim); border: 1px solid rgba(167,139,250,.18);
+  border-radius: 12px 12px 4px 12px; padding: 9px 14px;
+  font-size: 14px; color: var(--text); word-break: break-word;
+  display: inline-block; max-width: 100%;
+}
+
+/* ── Specialist status panel ───────────────────────────────── */
+.specialists-panel {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 8px;
+}
+.specialist-label {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.specialist-row {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted);
+}
+.specialist-row .s-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.specialist-row .s-status { color: var(--text-dim); margin-left: auto; font-size: 10px; }
+
+/* ── Tool cards ────────────────────────────────────────────── */
+.tool-cards { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+
+.tool-card {
+  display: flex; flex-direction: column;
+  border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--surface2); overflow: hidden;
+  transition: border-color 0.25s;
+}
+.tool-card-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; min-height: 36px;
+}
+
+.tool-card.running  { border-color: rgba(56,189,248,.3); }
+.tool-card.done-ok  { border-color: rgba(52,211,153,.3); }
+.tool-card.done-err { border-color: rgba(248,113,113,.3); }
+.tool-card.done-write { border-color: rgba(245,158,11,.35); }
+
+.tool-icon {
+  width: 18px; height: 18px; border-radius: 4px;
+  display: grid; place-items: center; font-size: 10px;
+  flex-shrink: 0;
+}
+.running   .tool-icon { background: var(--accent-glow); color: var(--accent); }
+.done-ok   .tool-icon { background: var(--green-dim);   color: var(--green); }
+.done-err  .tool-icon { background: var(--red-dim);     color: var(--red); }
+.done-write .tool-icon { background: var(--orange-dim); color: var(--orange); }
+
+.tool-label {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.09em; flex-shrink: 0;
+}
+.running   .tool-label { color: var(--accent); }
+.done-ok   .tool-label { color: var(--green); }
+.done-err  .tool-label { color: var(--red); }
+.done-write .tool-label { color: var(--orange); }
+
+.tool-path {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text);
+}
+
+.tool-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted); flex-shrink: 0; display: flex; align-items: center; gap: 6px;
+}
+.tool-duration { font-size: 10px; color: var(--text-dim); }
+
+.spin { display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to{ transform: rotate(360deg); } }
+
+/* ── Diff viewer ───────────────────────────────────────────── */
+.diff-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px 6px;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted); cursor: pointer; user-select: none;
+  border-top: 1px solid rgba(245,158,11,.15);
+  transition: color 0.15s;
+}
+.diff-toggle:hover { color: var(--orange); }
+.diff-badge {
+  padding: 1px 5px; border-radius: 3px;
+  font-size: 9px; font-weight: 600;
+}
+.diff-badge.added   { background: rgba(52,211,153,.2); color: var(--green); }
+.diff-badge.removed { background: rgba(248,113,113,.2); color: var(--red); }
+.diff-chevron { margin-left: auto; font-size: 9px; transition: transform 0.15s; }
+.diff-toggle.open .diff-chevron { transform: rotate(180deg); }
+
+.diff-body {
+  display: none; overflow: hidden;
+  border-top: 1px solid rgba(245,158,11,.10);
+  max-height: 280px; overflow-y: auto;
+}
+.diff-body.open { display: block; }
+.diff-body::-webkit-scrollbar { width: 3px; }
+.diff-body::-webkit-scrollbar-thumb { background: var(--border); }
+
+.diff-line {
+  display: flex; align-items: flex-start; gap: 0;
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.6;
+  padding: 0 12px;
+}
+.diff-line.add    { background: rgba(52,211,153,.08); }
+.diff-line.remove { background: rgba(248,113,113,.08); }
+.diff-line.same   { opacity: 0.4; }
+.diff-gutter {
+  width: 20px; flex-shrink: 0; text-align: right;
+  color: var(--text-dim); font-size: 9px; margin-right: 6px;
+  padding-top: 1px; user-select: none;
+}
+.diff-gutter.add    { color: var(--green); }
+.diff-gutter.remove { color: var(--red); }
+.diff-code { flex: 1; white-space: pre-wrap; word-break: break-all; color: var(--text); }
+.diff-line.add .diff-code    { color: var(--green); }
+.diff-line.remove .diff-code { color: var(--red); }
+
+/* ── Thinking dots ─────────────────────────────────────────── */
+.thinking-dots {
+  display: flex; gap: 5px; padding: 4px 0;
+}
+.thinking-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  animation: bounce 1.2s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%,80%,100% { transform:scale(.6); opacity:.4; }
+  40%         { transform:scale(1);  opacity:1; }
+}
+
+/* ── AI response text ──────────────────────────────────────── */
+.ai-text { font-size: 14px; line-height: 1.75; color: var(--text); }
+.ai-text p                   { margin: 0 0 10px; }
+.ai-text p:last-child        { margin-bottom: 0; }
+.ai-text strong              { color: #dde8f5; font-weight: 600; }
+.ai-text em                  { color: var(--accent); font-style: normal; }
+.ai-text ul, .ai-text ol     { padding-left: 20px; margin: 0 0 10px; }
+.ai-text li                  { margin-bottom: 3px; }
+.ai-text h1,.ai-text h2,.ai-text h3 {
+  font-family: var(--font-ui); color: #dde8f5; font-weight: 600;
+  margin: 14px 0 5px;
+}
+.ai-text h1 { font-size: 17px; } .ai-text h2 { font-size: 15px; } .ai-text h3 { font-size: 14px; }
+
+.ai-text pre {
+  background: #070c16; border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; overflow-x: auto;
+  margin: 10px 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.65;
+}
+.ai-text code:not(pre code) {
+  font-family: var(--font-mono); font-size: 11.5px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; color: var(--accent);
+}
+.ai-text blockquote {
+  border-left: 3px solid var(--accent); padding-left: 12px;
+  color: var(--text-muted); margin: 10px 0;
+}
+
+/* ── Input area ────────────────────────────────────────────── */
+#input-area {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 12px 20px 14px;
+  flex-shrink: 0;
+}
+.input-inner {
+  max-width: 720px; margin: 0 auto;
+  display: flex; align-items: flex-end; gap: 8px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 9px 9px 9px 15px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input-inner:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+#msg-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text); font-family: var(--font-body); font-size: 14px;
+  line-height: 1.6; resize: none; max-height: 150px; min-height: 22px;
+}
+#msg-input::placeholder { color: var(--text-dim); }
+#send-btn {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: var(--accent); border: none;
+  cursor: pointer; display: grid; place-items: center;
+  flex-shrink: 0; transition: all 0.15s; color: #06090f;
+}
+#send-btn:hover:not(:disabled) { background: #7dd3fc; transform: scale(1.04); }
+#send-btn:disabled { background: var(--border); cursor: not-allowed; color: var(--text-dim); }
+#send-btn svg { width: 15px; height: 15px; }
+.input-hint {
+  max-width: 720px; margin: 5px auto 0;
+  font-size: 10px; color: var(--text-dim);
+  padding: 0 4px; font-family: var(--font-mono);
+}
+
+/* ── Right Activity Log ────────────────────────────────────── */
+#activity-log {
+  width: var(--log-w);
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  display: flex; flex-direction: column; overflow: hidden;
+  transition: width 0.2s ease, opacity 0.2s ease;
+}
+#activity-log.hidden { width: 0; opacity: 0; pointer-events: none; }
+
+.log-head {
+  padding: 10px 12px 8px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+}
+.log-head h3 {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase;
+  flex: 1;
+}
+.log-clear-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-dim); font-size: 10px; font-family: var(--font-mono);
+  transition: color 0.15s; padding: 2px 4px;
+}
+.log-clear-btn:hover { color: var(--red); }
+
+#log-entries {
+  flex: 1; overflow-y: auto;
+  padding: 6px 0;
+}
+#log-entries::-webkit-scrollbar { width: 3px; }
+#log-entries::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.log-empty {
+  padding: 20px 12px; text-align: center;
+  color: var(--text-dim); font-size: 11px; font-family: var(--font-mono);
+  line-height: 1.7;
+}
+
+.log-entry {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.log-entry:hover { background: var(--surface2); }
+.log-entry.undone { opacity: 0.4; }
+
+.log-entry-top {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 2px;
+}
+.log-entry-icon {
+  width: 16px; height: 16px; border-radius: 4px;
+  display: grid; place-items: center; font-size: 9px; flex-shrink: 0;
+}
+.log-entry.read   .log-entry-icon { background: var(--accent-dim); color: var(--accent); }
+.log-entry.write  .log-entry-icon { background: var(--orange-dim); color: var(--orange); }
+.log-entry.create .log-entry-icon { background: var(--green-dim);  color: var(--green); }
+.log-entry.info   .log-entry-icon { background: var(--surface3);   color: var(--text-muted); }
+.log-entry.search .log-entry-icon { background: rgba(167,139,250,.12); color: var(--user-color); }
+.log-entry.delete .log-entry-icon { background: var(--red-dim);    color: var(--red); }
+.log-entry.error  .log-entry-icon { background: var(--red-dim);    color: var(--red); }
+
+.log-entry-name {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; flex: 1;
+}
+.log-entry.read   .log-entry-name { color: var(--accent); }
+.log-entry.write  .log-entry-name { color: var(--orange); }
+.log-entry.create .log-entry-name { color: var(--green); }
+.log-entry.delete .log-entry-name { color: var(--red); }
+.log-entry.search .log-entry-name { color: var(--user-color); }
+
+.log-entry-time {
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-dim);
+}
+
+.log-entry-path {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding-left: 22px; margin-bottom: 4px;
+}
+
+.log-duration {
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-dim);
+  padding-left: 22px; margin-bottom: 3px;
+}
+
+.undo-btn {
+  display: flex; align-items: center; gap: 4px;
+  margin-left: 22px; margin-top: 4px;
+  background: var(--orange-dim);
+  border: 1px solid rgba(245,158,11,.3);
+  border-radius: 5px; padding: 3px 9px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--orange); cursor: pointer; transition: all 0.15s;
+  width: fit-content;
+}
+.undo-btn:hover { background: var(--orange-glow); }
+.undo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Scrollbar global ──────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Search result in tool card ────────────────────────────── */
+.search-results {
+  padding: 6px 12px 8px; border-top: 1px solid var(--border);
+  max-height: 160px; overflow-y: auto;
+}
+.search-match {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 3px 0; border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 10px;
+}
+.search-match:last-child { border-bottom: none; }
+.search-match-path { color: var(--accent); flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.search-match-line { color: var(--text-dim); flex-shrink: 0; }
+.search-match-text { color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<header>
+  <button class="panel-toggle active" id="sidebar-toggle" onclick="toggleSidebar()" title="Scripts">⊞</button>
+
+  <div class="logo">
+    <div class="logo-icon">◈</div>
+    RBX-AI
+    <span class="logo-ver">v3</span>
+  </div>
+
+  <div class="header-spacer"></div>
+
+  <span id="scripts-stat" style="display:none">📋 <span id="scripts-count">0</span> scripts</span>
+  <span id="activity-stat" style="display:none">📝 <span id="activity-count">0</span> acciones</span>
+
+  <!-- Model badge -->
+  <div id="model-badge" style="
+    font-size:10px; font-family:var(--font-mono);
+    background:var(--accent-dim); border:1px solid var(--accent);
+    color:var(--accent); padding:2px 7px; border-radius:4px;
+    white-space:nowrap; max-width:200px; overflow:hidden; text-overflow:ellipsis;
+    cursor:default;" title="Modelo activo en OpenRouter">
+    🤖 cargando…
+  </div>
+
+  <div class="stat-pill" id="plugin-badge">
+    <div class="dot"></div>
+    <span id="plugin-label">Esperando plugin…</span>
+  </div>
+
+  <button class="btn-ghost" onclick="resetChat()">↺ Reiniciar</button>
+
+  <button class="panel-toggle active" id="log-toggle" onclick="toggleLog()" title="Actividad">☰</button>
+</header>
+
+<!-- ── App body ────────────────────────────────────────────── -->
+<div id="app-body">
+
+  <!-- Left: Script Browser -->
+  <aside id="sidebar">
+    <div class="sidebar-head">
+      <h3>Scripts del lugar</h3>
+      <input class="sidebar-search" id="sidebar-search"
+        placeholder="Filtrar scripts…" oninput="filterScripts(this.value)">
+    </div>
+    <div id="script-tree">
+      <div class="tree-empty">
+        Sin scripts indexados.<br>
+        Pide "Lista todos mis scripts" para empezar.
+      </div>
+    </div>
+  </aside>
+
+  <!-- Center: Chat -->
+  <div id="main">
+    <div id="chat">
+      <div class="messages-inner" id="messages">
+        <div id="welcome">
+          <div class="welcome-icon">◈</div>
+          <div class="welcome-title">RBX-AI Studio v3</div>
+          <div class="welcome-sub">
+            Conectado a tu Roblox Studio · Powered by OpenRouter (gratis)<br>
+            Lee, escribe, busca, crea scripts y consulta docs en vivo.
+          </div>
+
+          <div class="welcome-section-label">🚀 Empezar</div>
+          <div class="welcome-chips">
+            <div class="chip" onclick="fillPrompt('Lista todos mis scripts e indexa el codebase')">📋 Indexar scripts</div>
+            <div class="chip" onclick="fillPrompt('¿Cuál es la estructura de mi juego?')">🗂 Ver estructura</div>
+            <div class="chip" onclick="fillPrompt('Revisa si hay errores en el Output y analízalos')">🐛 Analizar errores</div>
+            <div class="chip" onclick="fillPrompt('Busca dónde se usa RemoteEvent en todos mis scripts')">🔍 Buscar en código</div>
+            <div class="chip" onclick="fillPrompt('Busca en los docs de Roblox cómo funciona CollectionService en 2026')">📖 Consultar docs</div>
+          </div>
+
+          <div class="welcome-section-label">🛠 Construir</div>
+          <div class="welcome-chips">
+            <div class="chip" onclick="fillPrompt('Crea un sistema de auras gacha completo con raridades y multiplicadores')">✨ Sistema de auras</div>
+            <div class="chip" onclick="fillPrompt('Crea un sistema de leaderboard con DataStore que salve puntos')">🏆 Leaderboard</div>
+            <div class="chip" onclick="fillPrompt('Añade un HUD de stamina con barra animada al StarterGui')">🎮 HUD de stamina</div>
+            <div class="chip" onclick="fillPrompt('Crea un sistema de tienda con Robux y moneda del juego')">🛒 Tienda en juego</div>
+            <div class="chip" onclick="fillPrompt('Implementa un sistema de pets con follow, stats y raridades')">🐾 Sistema de pets</div>
+            <div class="chip" onclick="fillPrompt('Crea un sistema anti-cheat básico para velocidad y vuelo')">🔒 Anti-cheat</div>
+          </div>
+
+          <div class="welcome-section-label">⚙ Arreglar</div>
+          <div class="welcome-chips">
+            <div class="chip" onclick="fillPrompt('Arregla los bugs más críticos de mi script principal')">🔧 Arreglar bugs</div>
+            <div class="chip" onclick="fillPrompt('Optimiza todos los scripts que usen wait() o spawn() deprecados')">⚡ Modernizar código</div>
+            <div class="chip" onclick="fillPrompt('Audita mis RemoteEvents para asegurar que validan del lado servidor')">🔒 Auditoría de seguridad</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div id="input-area">
+      <div class="input-inner">
+        <textarea id="msg-input" rows="1"
+          placeholder="Dile a la IA qué construir, arreglar o buscar…"></textarea>
+        <button id="send-btn" onclick="sendMessage()">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="14" x2="8" y2="2"/>
+            <polyline points="3 7 8 2 13 7"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">Enter para enviar · Shift+Enter para nueva línea · @ para mencionar script</div>
+    </div>
+  </div>
+
+  <!-- Right: Activity Log -->
+  <aside id="activity-log">
+    <div class="log-head">
+      <h3>Actividad</h3>
+      <button class="log-clear-btn" onclick="clearLog()">limpiar</button>
+    </div>
+    <div id="log-entries">
+      <div class="log-empty" id="log-empty">
+        Sin actividad aún.<br>Las acciones de la IA aparecen aquí.
+      </div>
+    </div>
+  </aside>
+
+</div><!-- /#app-body -->
+
+<script>
+// ── marked.js config ─────────────────────────────────────────
+marked.setOptions({
+  highlight(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: true, gfm: true
+});
+
+// ── State ────────────────────────────────────────────────────
+let sending       = false;
+let allScripts    = []; // [{path, name, type, line_count}]
+let activityItems = []; // entries for undo
+
+// ── Sidebar & Log toggles ────────────────────────────────────
+function toggleSidebar() {
+  const s  = document.getElementById('sidebar');
+  const btn = document.getElementById('sidebar-toggle');
+  s.classList.toggle('hidden');
+  btn.classList.toggle('active', !s.classList.contains('hidden'));
+}
+function toggleLog() {
+  const l  = document.getElementById('activity-log');
+  const btn = document.getElementById('log-toggle');
+  l.classList.toggle('hidden');
+  btn.classList.toggle('active', !l.classList.contains('hidden'));
+}
+
+// ── Input auto-resize ────────────────────────────────────────
+const msgInput = document.getElementById('msg-input');
+msgInput.addEventListener('input', () => {
+  msgInput.style.height = 'auto';
+  msgInput.style.height = Math.min(msgInput.scrollHeight, 150) + 'px';
+});
+msgInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+// ── Plugin status ─────────────────────────────────────────────
+function checkPlugin() {
+  fetch('/plugin/status').then(r => r.json()).then(d => {
+    const badge = document.getElementById('plugin-badge');
+    const label = document.getElementById('plugin-label');
+    if (d.connected) {
+      badge.className = 'stat-pill connected';
+      label.textContent = 'Studio conectado';
+    } else {
+      badge.className = 'stat-pill';
+      label.textContent = 'Esperando plugin…';
+    }
+  }).catch(() => {});
+}
+checkPlugin();
+setInterval(checkPlugin, 2000);
+
+// ── Session stats ─────────────────────────────────────────────
+function updateStats(scriptsCount, actCount) {
+  if (scriptsCount > 0) {
+    document.getElementById('scripts-stat').style.display = '';
+    document.getElementById('scripts-count').textContent  = scriptsCount;
+  }
+  if (actCount > 0) {
+    document.getElementById('activity-stat').style.display = '';
+    document.getElementById('activity-count').textContent  = actCount;
+  }
+}
+
+// ── Model badge ───────────────────────────────────────────────
+async function refreshModelBadge() {
+  try {
+    const res  = await fetch('/model');
+    const data = await res.json();
+    const badge = document.getElementById('model-badge');
+    if (badge) {
+      // Shorten model name: "qwen/qwen3-coder:free" → "qwen3-coder"
+      const short = data.model.split('/').pop().replace(':free','');
+      badge.textContent = '🤖 ' + short;
+      badge.title = data.model + ' (gratuito · OpenRouter)';
+    }
+  } catch (_) {}
+}
+setTimeout(refreshModelBadge, 1500);
+setInterval(refreshModelBadge, 30000);
+
+// ── Fill prompt ───────────────────────────────────────────────
+function fillPrompt(text) {
+  msgInput.value = text;
+  msgInput.focus();
+  msgInput.dispatchEvent(new Event('input'));
+}
+
+// ── Script tree ───────────────────────────────────────────────
+function buildScriptTree(scripts) {
+  allScripts = scripts;
+  const tree = document.getElementById('script-tree');
+  tree.innerHTML = '';
+  if (!scripts || scripts.length === 0) {
+    tree.innerHTML = '<div class="tree-empty">No se encontraron scripts.</div>';
+    return;
+  }
+
+  // Group by top-level service
+  const groups = {};
+  for (const s of scripts) {
+    const parts   = s.path.split('/');
+    const service = parts[0] || 'game';
+    if (!groups[service]) groups[service] = [];
+    groups[service].push(s);
+  }
+
+  const serviceOrder = [
+    'ServerScriptService','StarterPlayer','StarterGui','ReplicatedStorage',
+    'ServerStorage','StarterPack','Workspace'
+  ];
+  const orderedKeys = [
+    ...serviceOrder.filter(k => groups[k]),
+    ...Object.keys(groups).filter(k => !serviceOrder.includes(k)).sort(),
+  ];
+
+  for (const svc of orderedKeys) {
+    const items = groups[svc];
+    const grp   = document.createElement('div');
+    grp.className = 'tree-group';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'tree-group-header';
+    hdr.innerHTML = `
+      <span class="arrow">▾</span>
+      ${svc}
+      <span class="tree-group-count">${items.length}</span>
+    `;
+    hdr.onclick = () => {
+      hdr.classList.toggle('collapsed');
+      list.classList.toggle('hidden');
+    };
+    grp.appendChild(hdr);
+
+    const list = document.createElement('div');
+    list.className = 'tree-items';
+
+    for (const s of items) {
+      const row = document.createElement('div');
+      row.className = 'tree-item';
+      const icon = s.type === 'LocalScript' ? '🖥' : s.type === 'ModuleScript' ? '📦' : '⚙';
+      const name = s.path.split('/').slice(1).join('/') || s.name;
+      row.innerHTML = `
+        <span class="tree-item-icon">${icon}</span>
+        <span class="tree-item-label" title="${s.path}">${name}</span>
+        <span class="tree-item-lines">${s.line_count}</span>
+      `;
+      row.onclick = () => fillPrompt(`Lee el script '${s.path}' y explícame qué hace`);
+      list.appendChild(row);
+    }
+    grp.appendChild(list);
+    tree.appendChild(grp);
+  }
+
+  updateStats(scripts.length, activityItems.length);
+}
+
+function filterScripts(query) {
+  if (!query) { buildScriptTree(allScripts); return; }
+  const filtered = allScripts.filter(s =>
+    s.path.toLowerCase().includes(query.toLowerCase())
+  );
+  buildScriptTree(filtered);
+}
+
+// ── Diff computation ──────────────────────────────────────────
+function computeDiff(origText, newText) {
+  const origLines = (origText || '').split('\n');
+  const newLines  = (newText  || '').split('\n');
+
+  const rows = [];
+  let added = 0, removed = 0;
+  const maxLen = Math.max(origLines.length, newLines.length);
+
+  // Simple sequential diff — marks changed lines per position
+  let inChange = false;
+  const chunks = [];
+  let currentChunk = null;
+
+  for (let i = 0; i < maxLen; i++) {
+    const o = origLines[i];
+    const n = newLines[i];
+    const hasO = i < origLines.length;
+    const hasN = i < newLines.length;
+
+    if (!hasO) {
+      added++;
+      if (!currentChunk) currentChunk = { rows: [] };
+      currentChunk.rows.push({ type:'add', text: n, line: i+1 });
+    } else if (!hasN) {
+      removed++;
+      if (!currentChunk) currentChunk = { rows: [] };
+      currentChunk.rows.push({ type:'remove', text: o, line: i+1 });
+    } else if (o !== n) {
+      added++; removed++;
+      if (!currentChunk) currentChunk = { rows: [] };
+      currentChunk.rows.push({ type:'remove', text: o, line: i+1 });
+      currentChunk.rows.push({ type:'add',    text: n, line: i+1 });
+    } else {
+      if (currentChunk) {
+        // Add one context line then close
+        currentChunk.rows.push({ type:'same', text: o, line: i+1 });
+        chunks.push(currentChunk);
+        currentChunk = null;
+      }
+    }
+  }
+  if (currentChunk) chunks.push(currentChunk);
+
+  return { added, removed, chunks: chunks.slice(0, 4) };
+}
+
+function renderDiff(diff) {
+  let html = '';
+  for (const chunk of diff.chunks) {
+    for (const row of chunk.rows) {
+      const sign = row.type==='add' ? '+' : row.type==='remove' ? '-' : ' ';
+      const escaped = row.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      html += `<div class="diff-line ${row.type}">
+        <span class="diff-gutter ${row.type}">${sign}</span>
+        <span class="diff-code">${escaped}</span>
+      </div>`;
+    }
+    // Separator between chunks
+    html += `<div class="diff-line same">
+      <span class="diff-gutter"> </span>
+      <span class="diff-code" style="color:var(--text-dim)">···</span>
+    </div>`;
+  }
+  return html;
+}
+
+// ── Activity log ──────────────────────────────────────────────
+const ENTRY_CLASS = {
+  list_scripts   : 'info',
+  read_script    : 'read',
+  write_script   : 'write',
+  create_script  : 'create',
+  delete_script  : 'delete',
+  search_in_scripts: 'search',
+  get_place_info : 'info',
+  get_errors     : 'info',
+};
+const ENTRY_ICON = {
+  list_scripts   : '📋',
+  read_script    : '📄',
+  write_script   : '✏',
+  create_script  : '✨',
+  delete_script  : '🗑',
+  search_in_scripts: '🔍',
+  get_place_info : '🗂',
+  get_errors     : '⚠',
+};
+const ENTRY_LABEL = {
+  list_scripts   : 'LIST',
+  read_script    : 'READ',
+  write_script   : 'WRITE',
+  create_script  : 'CREATE',
+  delete_script  : 'DELETE',
+  search_in_scripts: 'GREP',
+  get_place_info : 'INFO',
+  get_errors     : 'ERRORS',
+};
+
+function addToActivityLog(entry) {
+  activityItems.push(entry);
+  document.getElementById('log-empty')?.remove();
+
+  const logEl = document.getElementById('log-entries');
+  const cls   = ENTRY_CLASS[entry.toolName] || 'info';
+  const icon  = ENTRY_ICON[entry.toolName]  || '⚙';
+  const lbl   = ENTRY_LABEL[entry.toolName] || entry.toolName;
+  const path  = entry.input?.path || entry.input?.pattern || '';
+  const time  = new Date(entry.timestamp).toLocaleTimeString('es', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const dur   = entry.duration ? `${entry.duration}ms` : '';
+  const canUndo = entry.canUndo && !entry.undone;
+
+  const div = document.createElement('div');
+  div.className = `log-entry ${cls}`;
+  div.id = `log-${entry.id}`;
+  div.innerHTML = `
+    <div class="log-entry-top">
+      <div class="log-entry-icon">${icon}</div>
+      <div class="log-entry-name">${lbl}</div>
+      <div class="log-entry-time">${time}</div>
+    </div>
+    ${path ? `<div class="log-entry-path">${path}</div>` : ''}
+    ${dur  ? `<div class="log-duration">${dur}</div>` : ''}
+    ${canUndo ? `<button class="undo-btn" id="undo-${entry.id}" onclick="undoAction('${entry.id}', this)">↶ Deshacer</button>` : ''}
+  `;
+
+  logEl.insertBefore(div, logEl.firstChild);
+  updateStats(allScripts.length, activityItems.length);
+}
+
+async function undoAction(entryId, btn) {
+  btn.disabled = true;
+  btn.textContent = '↶ Deshaciendo…';
+  try {
+    const res = await fetch(`/activity/${entryId}/undo`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      btn.textContent = '✓ Deshecho';
+      const row = document.getElementById(`log-${entryId}`);
+      if (row) row.classList.add('undone');
+    } else {
+      btn.textContent = '✗ ' + (data.error || 'Error');
+    }
+  } catch (e) {
+    btn.textContent = '✗ Sin conexión';
+  }
+}
+
+function clearLog() {
+  activityItems = [];
+  document.getElementById('log-entries').innerHTML =
+    '<div class="log-empty" id="log-empty">Sin actividad aún.<br>Las acciones de la IA aparecen aquí.</div>';
+  updateStats(allScripts.length, 0);
+}
+
+// ── Tool cards ────────────────────────────────────────────────
+const TOOL_META = {
+  list_scripts      : { icon:'📋', label:'LISTANDO',    cls:'running' },
+  read_script       : { icon:'📄', label:'LEYENDO',     cls:'running' },
+  write_script      : { icon:'✏', label:'ESCRIBIENDO', cls:'running' },
+  create_script     : { icon:'✨', label:'CREANDO',     cls:'running' },
+  get_place_info    : { icon:'🗂', label:'ANALIZANDO',  cls:'running' },
+  search_in_scripts : { icon:'🔍', label:'BUSCANDO',    cls:'running' },
+  delete_script     : { icon:'🗑', label:'ELIMINANDO',  cls:'running' },
+  get_errors        : { icon:'⚠', label:'ERRORES',     cls:'running' },
+  search_roblox_docs: { icon:'📖', label:'DOCS LIVE',   cls:'running' },
+};
+
+function getToolPath(name, input) {
+  if (input?.path)    return '~/' + input.path;
+  if (input?.pattern) return '"' + input.pattern + '"';
+  if (name === 'list_scripts') return input?.filter ? 'filtro: ' + input.filter : 'todos los scripts';
+  if (name === 'get_place_info') return 'estructura del lugar';
+  if (name === 'get_errors')          return 'Output / runtime';
+  if (name === 'search_roblox_docs')  return '"' + (input?.query || '') + '"';
+  return '';
+}
+
+function createToolCard(name, input) {
+  const meta = TOOL_META[name] || { icon:'⚙', label: name.toUpperCase(), cls:'running' };
+  const path = getToolPath(name, input);
+
+  const card = document.createElement('div');
+  card.className = 'tool-card running';
+  card.innerHTML = `
+    <div class="tool-card-header">
+      <div class="tool-icon">${meta.icon}</div>
+      <div class="tool-label">${meta.label}</div>
+      <div class="tool-path">${path}</div>
+      <div class="tool-meta">
+        <span class="spin" style="font-size:11px">◌</span>
+      </div>
+    </div>
+  `;
+  return card;
+}
+
+function finishToolCard(card, name, result, success, duration, originalSource, newSource) {
+  const isWrite  = name === 'write_script' || name === 'create_script';
+  const isSearch = name === 'search_in_scripts';
+  const dur      = duration ? `${duration}ms` : '';
+
+  card.querySelector('.tool-meta').innerHTML = dur ? `<span class="tool-duration">${dur}</span>` : '';
+
+  if (!success) {
+    card.className = 'tool-card done-err';
+    card.querySelector('.tool-icon').textContent = '✗';
+    card.querySelector('.tool-label').textContent = 'ERROR';
+    const errText = result?.error || 'Falló';
+    card.querySelector('.tool-meta').innerHTML += ` <span style="color:var(--red);font-size:10px">${errText}</span>`;
+    return;
+  }
+
+  if (isWrite) {
+    card.className = 'tool-card done-write';
+    card.querySelector('.tool-icon').textContent = '✓';
+    const lc = result?.line_count || (newSource ? newSource.split('\n').length : 0);
+    if (lc) card.querySelector('.tool-meta').innerHTML += ` <span style="color:var(--orange);font-size:10px">${lc} líneas</span>`;
+
+    // Add diff if we have original and new source
+    if (name === 'write_script' && originalSource && newSource) {
+      const diff = computeDiff(originalSource, newSource);
+      if (diff.added > 0 || diff.removed > 0) {
+        const toggle = document.createElement('div');
+        toggle.className = 'diff-toggle';
+        toggle.innerHTML = `
+          <span>Ver cambios</span>
+          <span class="diff-badge added">+${diff.added}</span>
+          <span class="diff-badge removed">-${diff.removed}</span>
+          <span class="diff-chevron">▾</span>
+        `;
+        const body = document.createElement('div');
+        body.className = 'diff-body';
+        body.innerHTML = renderDiff(diff);
+
+        toggle.onclick = () => {
+          toggle.classList.toggle('open');
+          body.classList.toggle('open');
+        };
+
+        card.appendChild(toggle);
+        card.appendChild(body);
+      }
+    }
+  } else if (isSearch) {
+    card.className = 'tool-card done-ok';
+    card.querySelector('.tool-icon').textContent = '✓';
+    const count = result?.total_files || 0;
+    card.querySelector('.tool-meta').innerHTML += ` <span style="color:var(--green);font-size:10px">${count} archivos</span>`;
+    if (count > 0 && result.matches) {
+      const sr = document.createElement('div');
+      sr.className = 'search-results';
+      for (const m of result.matches.slice(0, 8)) {
+        for (const ln of (m.lines || []).slice(0, 2)) {
+          sr.innerHTML += `<div class="search-match">
+            <span class="search-match-path">${m.path.split('/').pop()}</span>
+            <span class="search-match-line">:${ln.line}</span>
+            <span class="search-match-text">${ln.text}</span>
+          </div>`;
+        }
+      }
+      card.appendChild(sr);
+    }
+  } else {
+    card.className = 'tool-card done-ok';
+    card.querySelector('.tool-icon').textContent = '✓';
+    if (result?.count !== undefined) {
+      card.querySelector('.tool-meta').innerHTML += ` <span style="color:var(--green);font-size:10px">${result.count} scripts</span>`;
+    } else if (result?.line_count !== undefined) {
+      card.querySelector('.tool-meta').innerHTML += ` <span style="color:var(--green);font-size:10px">${result.line_count} líneas</span>`;
+    } else if (result?.count !== undefined) {
+      card.querySelector('.tool-meta').innerHTML += ` <span style="color:var(--green);font-size:10px">${result.count}</span>`;
+    }
+  }
+}
+
+// ── Specialist status ─────────────────────────────────────────
+const SPECIALISTS = [
+  { id:'scout',    icon:'🔍', label:'Codebase Scout',   status:'indexando scripts…' },
+  { id:'bug',      icon:'🐛', label:'Bug Analyst',       status:'trazando errores…' },
+  { id:'writer',   icon:'✍', label:'Script Writer',     status:'preparando código…' },
+  { id:'security', icon:'🔒', label:'Security Guard',    status:'auditando…' },
+];
+
+function createSpecialistPanel(toolName) {
+  const panel = document.createElement('div');
+  panel.className = 'specialists-panel';
+  panel.innerHTML = '<div class="specialist-label">Especialistas activos</div>';
+
+  // Pick which specialists to show based on tool
+  const toShow = toolName === 'read_script' || toolName === 'list_scripts'
+    ? [SPECIALISTS[0]]
+    : toolName === 'get_errors'
+    ? [SPECIALISTS[1]]
+    : toolName === 'write_script' || toolName === 'create_script'
+    ? [SPECIALISTS[2], SPECIALISTS[3]]
+    : [SPECIALISTS[0], SPECIALISTS[2]];
+
+  for (const s of toShow) {
+    const row = document.createElement('div');
+    row.className = 'specialist-row';
+    row.innerHTML = `
+      <div class="s-dot"></div>
+      <span>${s.icon} ${s.label}</span>
+      <span class="s-status">${s.status}</span>
+    `;
+    panel.appendChild(row);
+  }
+  return panel;
+}
+
+// ── Send message ───────────────────────────────────────────────
+async function sendMessage() {
+  const text = msgInput.value.trim();
+  if (!text || sending) return;
+
+  sending = true;
+  document.getElementById('send-btn').disabled = true;
+  msgInput.value = '';
+  msgInput.style.height = 'auto';
+
+  document.getElementById('welcome')?.remove();
+
+  const container = document.getElementById('messages');
+
+  // User bubble
+  const userEl = document.createElement('div');
+  userEl.className = 'message user';
+  userEl.innerHTML = `
+    <div class="avatar">Tú</div>
+    <div class="message-body">
+      <div class="user-bubble">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+    </div>`;
+  container.appendChild(userEl);
+  scrollToBottom();
+
+  // AI message scaffold
+  const msgEl = document.createElement('div');
+  msgEl.className = 'message ai';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar'; avatar.textContent = '◈';
+  const body = document.createElement('div');
+  body.className = 'message-body';
+  const toolCards   = document.createElement('div'); toolCards.className = 'tool-cards';
+  const thinkingEl  = document.createElement('div'); thinkingEl.className = 'thinking-dots';
+  thinkingEl.innerHTML = '<span></span><span></span><span></span>';
+  const textEl      = document.createElement('div'); textEl.className = 'ai-text';
+  body.appendChild(toolCards);
+  body.appendChild(thinkingEl);
+  body.appendChild(textEl);
+  msgEl.appendChild(avatar); msgEl.appendChild(body);
+  container.appendChild(msgEl);
+  scrollToBottom();
+
+  const activeCards = new Map(); // toolUseId → cardEl
+  let specPanel = null;
+
+  try {
+    const postRes = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    });
+    const { job_id, error } = await postRes.json();
+    if (error || !job_id) throw new Error(error || 'Error al iniciar');
+
+    await new Promise((resolve, reject) => {
+      const es = new EventSource(`/chat/stream/${job_id}`);
+
+      es.onmessage = e => {
+        const ev = JSON.parse(e.data);
+
+        if (ev.type === 'thinking') {
+          // Dots already shown
+        }
+
+        else if (ev.type === 'tool_start') {
+          thinkingEl.remove();
+
+          // Show specialist panel
+          if (specPanel) specPanel.remove();
+          specPanel = createSpecialistPanel(ev.name);
+          body.insertBefore(specPanel, toolCards.nextSibling);
+
+          const card = createToolCard(ev.name, ev.input);
+          toolCards.appendChild(card);
+          activeCards.set(ev.id, { card, input: ev.input });
+          scrollToBottom();
+        }
+
+        else if (ev.type === 'tool_end') {
+          const entry = activeCards.get(ev.id);
+          if (entry) {
+            finishToolCard(
+              entry.card, ev.name, ev.result, ev.success,
+              ev.duration, ev.originalSource, ev.newSource
+            );
+          }
+
+          // If writing, update script tree live
+          if (ev.name === 'list_scripts' && ev.result?.scripts) {
+            buildScriptTree(ev.result.scripts);
+          }
+
+          const stillRunning = toolCards.querySelectorAll('.running');
+          if (stillRunning.length === 0) {
+            if (specPanel) { specPanel.remove(); specPanel = null; }
+            if (!body.contains(thinkingEl)) {
+              body.insertBefore(thinkingEl, textEl);
+            }
+            scrollToBottom();
+          }
+        }
+
+        else if (ev.type === 'syntax_warn') {
+          // Show syntax warnings inline
+          if (ev.warnings?.length) {
+            const warnEl = document.createElement('div');
+            warnEl.style.cssText = 'background:rgba(245,158,11,.12);border:1px solid var(--orange);border-radius:6px;padding:8px 10px;font-size:11px;font-family:var(--font-mono);color:var(--orange);margin:4px 0;';
+            warnEl.innerHTML = '⚠ <strong>Syntax Guard</strong><br>' + ev.warnings.map(w => `• ${w}`).join('<br>');
+            toolCards.appendChild(warnEl);
+            scrollToBottom();
+          }
+        }
+
+        else if (ev.type === 'activity') {
+          addToActivityLog(ev.entry);
+        }
+
+        else if (ev.type === 'text') {
+          thinkingEl.remove();
+          if (specPanel) { specPanel.remove(); specPanel = null; }
+          const raw = ev.content || '';
+          textEl.innerHTML = DOMPurify.sanitize(marked.parse(raw));
+          textEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+          scrollToBottom();
+        }
+
+        else if (ev.type === 'done') {
+          thinkingEl.remove();
+          if (specPanel) { specPanel.remove(); specPanel = null; }
+          es.close(); resolve();
+        }
+
+        else if (ev.type === 'error') {
+          thinkingEl.remove();
+          if (specPanel) { specPanel.remove(); specPanel = null; }
+          textEl.innerHTML = `<span style="color:var(--red)">⚠ ${ev.message}</span>`;
+          es.close(); reject(new Error(ev.message));
+        }
+      };
+
+      es.onerror = () => { es.close(); reject(new Error('Conexión perdida')); };
+    });
+
+  } catch (err) {
+    thinkingEl.remove();
+    if (specPanel) specPanel.remove();
+    textEl.innerHTML = `<span style="color:var(--red)">⚠ ${err.message}</span>`;
+  }
+
+  sending = false;
+  document.getElementById('send-btn').disabled = false;
+  msgInput.focus();
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  const chat = document.getElementById('chat');
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// ── Reset ─────────────────────────────────────────────────────
+async function resetChat() {
+  if (sending) return;
+  await fetch('/chat/reset', { method: 'POST' });
+  allScripts    = [];
+  activityItems = [];
+  document.getElementById('script-tree').innerHTML =
+    '<div class="tree-empty">Sin scripts indexados.<br>Pide "Lista todos mis scripts" para empezar.</div>';
+  document.getElementById('scripts-stat').style.display = 'none';
+  document.getElementById('activity-stat').style.display = 'none';
+  clearLog();
+
+  document.getElementById('messages').innerHTML = `
+    <div id="welcome">
+      <div class="welcome-icon">◈</div>
+      <div class="welcome-title">Sesión reiniciada</div>
+      <div class="welcome-sub">Historial borrado. El proyecto sigue disponible cuando lo necesites.</div>
+      <div class="welcome-section-label">🚀 Empezar</div>
+      <div class="welcome-chips">
+        <div class="chip" onclick="fillPrompt('Lista todos mis scripts e indexa el codebase')">📋 Indexar scripts</div>
+        <div class="chip" onclick="fillPrompt('¿Cuál es la estructura de mi juego?')">🗂 Ver estructura</div>
+        <div class="chip" onclick="fillPrompt('Revisa si hay errores en el Output y analízalos')">🐛 Analizar errores</div>
+      </div>
+    </div>`;
+}
+</script>
+</body>
+</html>
