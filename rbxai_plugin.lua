@@ -81,7 +81,7 @@ local lastHttpError = ""   -- último error HTTP (para diagnóstico en la ventan
 
 local function httpGet(url)
   local ok, res = pcall(function()
-    return HttpService:GetAsync(url, false, { ["User-Agent"] = "RBX-AI-Plugin" })
+    return HttpService:GetAsync(url)
   end)
   if not ok then lastHttpError = tostring(res) end
   return ok, res
@@ -89,12 +89,12 @@ end
 
 local function httpPost(url, body)
   local ok, res = pcall(function()
-    return HttpService:PostAsync(url, HttpService:JSONEncode(body), Enum.HttpContentType.ApplicationJson, false, "RBX-AI-Plugin")
+    return HttpService:PostAsync(url, HttpService:JSONEncode(body), Enum.HttpContentType.ApplicationJson)
   end)
   return ok, res
 end
 
-local function notify(kind, msg)
+notify = function(kind, msg)
   local payload = { type = kind, message = msg, place = game.PlaceId }
   httpPost(serverUrl .. "/plugin/event", payload)
 end
@@ -359,7 +359,9 @@ end
 --  BUCLE DE POLLING (el corazón del puente)
 -- ═══════════════════════════════════════════════════════════════
 
-local sleepStreak = 0   -- peticiones seguidas que fallan (servidor dormido)
+local sleepStreak = 0
+local setStatus   -- forward declaration (definida junto a la UI)
+local notify      -- forward declaration (definida más abajo)
 
 -- "Despertador" dedicado para servidores en la nube (Railway/Colab/etc.)
 -- La primera petición tras dormir puede devolver 502 y tardar 30-90 s (cold boot).
@@ -507,7 +509,7 @@ note.TextWrapped = true
 note.TextYAlignment = Enum.TextYAlignment.Top
 note.Size = UDim2.new(1, 0, 0, 70)
 
-local function setStatus(text, good)
+setStatus = function(text, good)
   statusLabel.Text = "Estado: " .. text
   statusLabel.TextColor3 = good and Color3.fromRGB(120, 220, 160) or Color3.fromRGB(230, 130, 130)
 end
