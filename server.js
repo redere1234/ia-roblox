@@ -7,12 +7,33 @@
 
 const express        = require("express");
 const cors           = require("cors");
+const path           = require("path");
+const fs             = require("fs");
 const { randomUUID } = require("crypto");
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
 app.use(cors());
-app.use(express.static("public"));
+
+// Serve static files from /public (absolute path so Railway finds it)
+const PUBLIC_DIR = path.join(__dirname, "public");
+app.use(express.static(PUBLIC_DIR));
+
+// Explicit fallback: serve index.html for GET /
+app.get("/", (req, res) => {
+  const indexPath = path.join(PUBLIC_DIR, "index.html");
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(200).send(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>RBX-AI Studio v3</title></head><body style="font-family:sans-serif;padding:2rem;background:#06090f;color:#c8d6e8">
+<h1>RBX-AI Studio v3</h1>
+<p>El servidor está corriendo. El archivo <code>public/index.html</code> no se encontró en el deploy.</p>
+<p>Asegúrate de que la carpeta <code>public/</code> esté incluida en tu repositorio.</p>
+<p>API status: <a href="/plugin/status" style="color:#38bdf8">/plugin/status</a></p>
+</body></html>`);
+  }
+});
 
 // ─── OpenRouter Config ────────────────────────────────────────
 
