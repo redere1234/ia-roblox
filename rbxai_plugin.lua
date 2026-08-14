@@ -77,10 +77,13 @@ LogService.MessageOut:Connect(function(message, messageType)
 end)
 
 -- ── HTTP helpers ──────────────────────────────────────────────
+local lastHttpError = ""   -- último error HTTP (para diagnóstico en la ventana)
+
 local function httpGet(url)
   local ok, res = pcall(function()
     return HttpService:GetAsync(url, false, { ["User-Agent"] = "RBX-AI-Plugin" })
   end)
+  if not ok then lastHttpError = tostring(res) end
   return ok, res
 end
 
@@ -358,6 +361,18 @@ end
 
 local sleepStreak = 0   -- peticiones seguidas que fallan (servidor dormido)
 
+-- "Despertador" dedicado para servidores en la nube (Railway/Colab/etc.)
+-- La primera petición tras dormir puede devolver 502 y tardar 30-90 s (cold boot).
+local function wakeUpServer(url)
+  for i = 1, 8 do
+    setStatus("despertando el servidor (" .. i .. "/8)…", false)
+    task.wait(8)   -- ~64 s en total para el cold boot
+    local ok, body = httpGet(url .. "/plugin/poll")
+    if ok and body then return true end
+  end
+  return false
+end
+
 local function pollOnce()
   local ok, body = httpGet(serverUrl .. "/plugin/poll")
   if not ok or not body then
@@ -509,27 +524,34 @@ local function stopPolling()
   setStatus("desconectado", false)
 end
 
--- El servidor (Railway/Colab) puede tardar hasta 30 s en "despertar" si está dormido.
--- Al pulsar Conectar reintentamos el ping varias veces antes de rendirnos.
-local function tryConnect(attempts)
-  for i = 1, (attempts or 6) do
-    if i > 1 then
-      setStatus("despertando el servidor (" .. i .. "/6)…", false)
-      task.wait(5)   -- dar tiempo a que el servidor despierte
+-- El servidor (Railway/Colab) puede tardar 30-90 s en "despertar" si está dormido
+-- (la primera petición puede devolver HTTP 502 durante el cold boot).
+local function tryConnect(isCloud)
+  lastHttpError = ""
+  local ok, body = httpGet(serverUrl .. "/plugin/poll")
+  if ok and body then
+    setStatus("conectado", true)
+    connected = true
+    notify("plugin_online", "Plugin conectado desde Studio")
+    local ok2, data = pcall(HttpService.JSONDecode, HttpService, body)
+    if ok2 and data and not data.command then
+      tools._index_all()   -- mandar el índice del lugar al conectar
     end
-    local ok, body = httpGet(serverUrl .. "/plugin/poll")
-    if ok and body then
+    return true
+  end
+  local err = lastHttpError or "sin respuesta"
+  if isCloud then
+    print("[RBX-AI] 1ª petición falló (" .. err .. "). Servidor posiblemente dormido: reintentando durante ~64 s…")
+    if wakeUpServer(serverUrl) then
       setStatus("conectado", true)
       connected = true
       notify("plugin_online", "Plugin conectado desde Studio")
-      local ok2, data = pcall(HttpService.JSONDecode, HttpService, body)
-      if ok2 and data and not data.command then
-        tools._index_all()   -- mandar el índice del lugar al conectar
-      end
+      tools._index_all()
       return true
     end
   end
-  setStatus("no se puede alcanzar el servidor — pulsa de nuevo", false)
+  setStatus("no conecta: " .. err, false)
+  print("[RBX-AI] No se pudo conectar a " .. serverUrl .. " — último error: " .. err)
   connected = false
   return false
 end
@@ -542,10 +564,9 @@ connectBtn.MouseButton1Click:Connect(function()
   end
   stopPolling()
   serverUrl = url:gsub("/+$", "")   -- quitar barras finales
-  local attempts = url:find("railway.app", 1, true) or url:find("ngrok", 1, true) or url:find("trycloudflare", 1, true)
-    and 6 or 2   -- servidores en la nube duermen: reintentar hasta 6 veces (~25 s)
+  local isCloud = not not (url:find("railway.app", 1, true) or url:find("ngrok", 1, true) or url:find("trycloudflare", 1, true))
   setStatus("conectando…", false)
-  tryConnect(attempts)
+  tryConnect(isCloud)
 end)
 
 button.Click:Connect(function()
