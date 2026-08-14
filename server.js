@@ -15,21 +15,21 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 app.use(cors());
 
-// Serve static files from /public (absolute path so Railway finds it)
-const PUBLIC_DIR = path.join(__dirname, "public");
+// Serve static files from the root directory (index.html lives next to server.js)
+const PUBLIC_DIR = __dirname;
 app.use(express.static(PUBLIC_DIR));
 
 // Explicit fallback: serve index.html for GET /
 app.get("/", (req, res) => {
-  const indexPath = path.join(PUBLIC_DIR, "index.html");
+  const indexPath = path.join(__dirname, "index.html");
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
     res.status(200).send(`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>RBX-AI Studio v3</title></head><body style="font-family:sans-serif;padding:2rem;background:#06090f;color:#c8d6e8">
 <h1>RBX-AI Studio v3</h1>
-<p>El servidor está corriendo. El archivo <code>public/index.html</code> no se encontró en el deploy.</p>
-<p>Asegúrate de que la carpeta <code>public/</code> esté incluida en tu repositorio.</p>
+<p>El servidor está corriendo pero <code>index.html</code> no se encontró en el directorio raíz.</p>
+<p>Asegúrate de que <code>index.html</code> esté en la raíz de tu repositorio junto a <code>server.js</code>.</p>
 <p>API status: <a href="/plugin/status" style="color:#38bdf8">/plugin/status</a></p>
 </body></html>`);
   }
