@@ -356,15 +356,22 @@ end
 --  BUCLE DE POLLING (el corazón del puente)
 -- ═══════════════════════════════════════════════════════════════
 
+local sleepStreak = 0   -- peticiones seguidas que fallan (servidor dormido)
+
 local function pollOnce()
   local ok, body = httpGet(serverUrl .. "/plugin/poll")
   if not ok or not body then
-    if connected then
+    sleepStreak = sleepStreak + 1
+    -- Si estábamos conectados y lleva 20+ s sin respuesta, marcar offline
+    if connected and sleepStreak > 40 then
       connected = false
+      setStatus("servidor inaccesible (¿dormido?)", false)
       notify("plugin_offline", "Plugin desconectado del servidor")
+      sleepStreak = 0
     end
     return
   end
+  sleepStreak = 0
 
   local ok2, data = pcall(HttpService.JSONDecode, HttpService, body)
   if not ok2 or not data then return end
@@ -502,23 +509,43 @@ local function stopPolling()
   setStatus("desconectado", false)
 end
 
+-- El servidor (Railway/Colab) puede tardar hasta 30 s en "despertar" si está dormido.
+-- Al pulsar Conectar reintentamos el ping varias veces antes de rendirnos.
+local function tryConnect(attempts)
+  for i = 1, (attempts or 6) do
+    if i > 1 then
+      setStatus("despertando el servidor (" .. i .. "/6)…", false)
+      task.wait(5)   -- dar tiempo a que el servidor despierte
+    end
+    local ok, body = httpGet(serverUrl .. "/plugin/poll")
+    if ok and body then
+      setStatus("conectado", true)
+      connected = true
+      notify("plugin_online", "Plugin conectado desde Studio")
+      local ok2, data = pcall(HttpService.JSONDecode, HttpService, body)
+      if ok2 and data and not data.command then
+        tools._index_all()   -- mandar el índice del lugar al conectar
+      end
+      return true
+    end
+  end
+  setStatus("no se puede alcanzar el servidor — pulsa de nuevo", false)
+  connected = false
+  return false
+end
+
 connectBtn.MouseButton1Click:Connect(function()
   local url = urlBox.Text:match("^%s*(.-)%s*$")
   if url == "" then
     setStatus("URL vacía", false)
     return
   end
-  serverUrl = url:gsub("/+$", "")
   stopPolling()
-  startPolling()
-  -- comprobar conexión
-  local ok, body = httpGet(serverUrl .. "/plugin/poll")
-  if ok and body then
-    setStatus("conectado", true)
-    connected = true
-  else
-    setStatus("no se puede alcanzar el servidor", false)
-  end
+  serverUrl = url:gsub("/+$", "")   -- quitar barras finales
+  local attempts = url:find("railway.app", 1, true) or url:find("ngrok", 1, true) or url:find("trycloudflare", 1, true)
+    and 6 or 2   -- servidores en la nube duermen: reintentar hasta 6 veces (~25 s)
+  setStatus("conectando…", false)
+  tryConnect(attempts)
 end)
 
 button.Click:Connect(function()
